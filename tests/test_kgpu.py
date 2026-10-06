@@ -144,7 +144,7 @@ class KgpuTest(unittest.TestCase):
     def test_repo_config_loads(self):
         cfg = kgpu.load_config(REPO)
         self.assertEqual(cfg["kernel"]["accelerator"], "NvidiaTeslaT4")
-        self.assertEqual(cfg["job"]["command"], "python src/gpu_check.py")
+        self.assertEqual(cfg["job"]["command"], "python src/infer.py")
 
 
 if __name__ == "__main__":

@@ -6,7 +6,9 @@
 
 ## 目录
 
-- `src/`：工程代码。`src/gpu_check.py` 是 GPU 自检示例。
+- `src/`：工程代码。
+  - `src/infer.py`：示例 AI 任务，也是 `kgpu.toml` 的默认命令。它在每张 GPU 上各加载一份模型，分摊推理，检查答案后写出 `outputs/infer.json`。检查不通过时退出码为 1。
+  - `src/gpu_check.py`：硬件自检，用来确认两张 T4 都可用并测试速度。
 - `tools/kgpu`：Kaggle GPU 运行器（`tools/kgpu --help`）。
 - `kgpu.toml`：Kaggle 运行配置，包括默认命令、加速器、超时，以及数据集和模型的挂载。
 - `requirements-gpu.txt`：在 Kaggle 上额外需要 pip 安装的包。

@@ -59,9 +59,9 @@ Token 只存在这里，**不要写进仓库里的任何文件**。
 在 OpenCode 里输入：
 
 ```
-/gpu                                     # 运行 kgpu.toml 里的默认命令
-/gpu -- python src/infer.py --limit 8    # 指定这一次要运行的命令
-/gpu 测一下新模型的推理速度                # 用自然语言描述，让它自己选命令
+/gpu                                     # 运行 kgpu.toml 里的默认命令（示例：src/infer.py 模型推理）
+/gpu -- python src/gpu_check.py          # 指定这一次要运行的命令
+/gpu 测一下 1.5B 模型的推理速度            # 用自然语言描述，让它自己选命令
 ```
 
 OpenCode 会先在本地做语法检查，然后把代码发到 Kaggle T4 ×2 运行，读取日志和结果。如果失败，它会修改代码再测，单次 `/gpu` 最多跑 3 轮 GPU。
@@ -104,7 +104,8 @@ kgpu quota                        # 本周 GPU 配额
 | `tools/kgpu` | Kaggle GPU 运行器 |
 | `kgpu.toml` | Kaggle 运行配置：默认命令、GPU 型号、联网、超时、数据集和模型挂载 |
 | `requirements-gpu.txt` | Kaggle 上额外安装的 pip 包 |
-| `src/gpu_check.py` | 示例：检查两张 T4 是否都可用，并测 fp16 矩阵乘法速度 |
+| `src/infer.py` | 示例 AI 工程（默认任务）：每张 T4 各加载一份 Qwen2.5-0.5B-Instruct，分摊推理并检查答案，结果写到 `outputs/infer.json` |
+| `src/gpu_check.py` | 硬件自检：检查两张 T4 是否都可用，并测 fp16 矩阵乘法速度 |
 | `AGENTS.md` | 给 OpenCode 的项目规则：开发闭环、节省 GPU 配额、不泄露密钥 |
 | `.opencode/commands/gpu.md` | OpenCode 的 `/gpu` 命令 |
 | `opencode.json` | OpenCode 项目配置 |

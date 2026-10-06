@@ -61,7 +61,7 @@ DEFAULTS: dict[str, dict] = {
         "timeout": 3600,
     },
     "job": {
-        "command": "python src/gpu_check.py",
+        "command": "python src/infer.py",
         "requirements": "requirements-gpu.txt",
         "setup": "",
         "env": {},
@@ -635,8 +635,11 @@ def kaggle_api():
         api.authenticate()
     except SystemExit:
         die(
-            "Kaggle login failed. Create a token at https://www.kaggle.com/settings/api and expose it as "
-            "KAGGLE_API_TOKEN (in Codespaces: GitHub Settings > Codespaces > Secrets, then rebuild or restart)."
+            "Kaggle 登录失败：没有可用的 KAGGLE_API_TOKEN。\n"
+            "  1. 在 https://www.kaggle.com/settings/api 生成 token（KGAT_ 开头）\n"
+            "  2. 在 https://github.com/settings/codespaces 添加 secret KAGGLE_API_TOKEN（仓库选 langhua98/open-code）\n"
+            "  3. 重启 codespace；或在当前终端临时执行 export KAGGLE_API_TOKEN=<token>\n"
+            "Kaggle login failed: set KAGGLE_API_TOKEN (a Codespaces secret) to a token from kaggle.com/settings/api."
         )
     return api
 

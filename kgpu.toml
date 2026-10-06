@@ -16,7 +16,8 @@ timeout = 3600
 
 [job]
 # What runs on Kaggle, from the repo root. `tools/kgpu run -- <cmd>` overrides it for one run.
-command = "python src/gpu_check.py"
+# Quick hardware check instead: tools/kgpu run -- python src/gpu_check.py
+command = "python src/infer.py"
 # Installed with pip before the command if the file lists any packages.
 # Kaggle images already ship torch, transformers, etc.
 requirements = "requirements-gpu.txt"
