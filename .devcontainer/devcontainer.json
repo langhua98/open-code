@@ -4,9 +4,11 @@
   "features": {
     "ghcr.io/devcontainers/features/node:1": { "version": "lts" }
   },
-  // Installs OpenCode and the Kaggle CLI once, then serves the OpenCode web UI on every start.
+  // Installs OpenCode and the Kaggle CLI once. Each time the editor connects, tools/web serves
+  // the OpenCode web UI in the foreground of a terminal (a background process from
+  // postStartCommand does not survive in Codespaces).
   "postCreateCommand": "bash .devcontainer/setup.sh",
-  "postStartCommand": "bash .devcontainer/start-opencode.sh",
+  "postAttachCommand": "bash tools/web",
   "forwardPorts": [4096],
   "portsAttributes": {
     "4096": { "label": "OpenCode Web", "onAutoForward": "notify" }

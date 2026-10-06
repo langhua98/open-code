@@ -1,5 +1,8 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "model": "opencode/nemotron-3-ultra-free",
+  "small_model": "opencode/nemotron-3.5-lightning-free",
+  "disabled_providers": ["github-copilot"],
   "watcher": {
     "ignore": ["runs/**", "outputs/**"]
   }

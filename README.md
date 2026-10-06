@@ -37,7 +37,7 @@ Token 只存在 Codespaces secrets 里，**不要写进仓库里的任何文件*
 
 - 安装 OpenCode 和 Kaggle CLI；
 - 用你的 token 登录 Kaggle，并打印本周 GPU 配额；
-- 在 4096 端口启动 OpenCode 的 Web 界面。
+- 编辑器连上以后，在一个终端里启动 OpenCode 的 Web 界面（4096 端口）。以后每次打开这个 Codespace，都会自动这样启动。
 
 ## 日常使用
 
@@ -45,8 +45,11 @@ Token 只存在 Codespaces secrets 里，**不要写进仓库里的任何文件*
 
 - **手机推荐用 Web 界面**：在 Codespace 底部的 **端口（Ports）** 面板找到 `4096 (OpenCode Web)`，点地球图标在浏览器中打开。地址形如 `https://<codespace名>-4096.app.github.dev`。端口默认是私有的，只有登录了 GitHub 的你自己能访问。如果设置了 `OPENCODE_SERVER_PASSWORD`，用户名填 `opencode`。
   - **每个浏览器第一次打开时**：点「添加项目」（或输入框下方的「新建项目」），在搜索框输入 `/workspaces/open-code`，选中第一项。之后这个浏览器会记住这个项目。
+  - **页面空白或打不开**：说明 OpenCode 没在运行。在 Codespace 的终端里输入 `web` 回车就能启动；输入 `web restart` 可以重启。运行 OpenCode 的那个终端不要关，关掉它 OpenCode 就停了。
 - **或者在终端里运行** `opencode`，进入终端界面（TUI）。
-- **模型**：不做任何配置，也能直接用 OpenCode Zen 的免费模型（默认是 Big Pickle）。免费模型偶尔会提示 `Rate limit exceeded`：点输入框下方的模型名，换一个免费模型（例如 Nemotron 3 Ultra Free）就行。想要稳定，可以在 OpenCode 里输入 `/connect` 接入 DeepSeek、Kimi、智谱、GitHub Copilot 等；也可以把对应的 API Key（例如 `DEEPSEEK_API_KEY`）加到 Codespaces secrets 里。
+- **模型**：默认用 OpenCode Zen 的免费模型 **Nemotron 3 Ultra Free**，不需要任何 key。免费模型经常有人排队：如果提示 `Rate limit exceeded`、`Free usage exceeded` 或 `Endpoint is unavailable`，点输入框下方的模型名，换一个标着「免费」的模型再发一次就行。
+  - GitHub Copilot 已经在 `opencode.json` 的 `disabled_providers` 里隐藏了，因为 Copilot 免费版不包含 Claude Sonnet 这类模型，选了只会报错。以后如果订阅了 Copilot Pro，把 `"github-copilot"` 从这个列表里删掉就能用。
+  - 想要稳定，可以在 OpenCode 里输入 `/connect`，接入 DeepSeek、Kimi、智谱等。
 
 ### 在 GPU 上测试：`/gpu`
 
@@ -94,7 +97,8 @@ kgpu quota                        # 本周 GPU 配额
 
 | 路径 | 作用 |
 | --- | --- |
-| `.devcontainer/` | Codespaces 配置：Python 3.12 + Node，自动安装 OpenCode、Kaggle CLI，启动 Web 界面 |
+| `.devcontainer/` | Codespaces 配置：Python 3.12 + Node，自动安装 OpenCode 和 Kaggle CLI，每次连上后启动 Web 界面 |
+| `tools/web` | 启动 OpenCode 网页版（终端里输入 `web`，重启用 `web restart`），并显示手机上要打开的网址 |
 | `tools/kgpu` | Kaggle GPU 运行器 |
 | `kgpu.toml` | Kaggle 运行配置：默认命令、GPU 型号、联网、超时、数据集和模型挂载 |
 | `requirements-gpu.txt` | Kaggle 上额外安装的 pip 包 |
@@ -102,12 +106,12 @@ kgpu quota                        # 本周 GPU 配额
 | `src/gpu_check.py` | 硬件自检：检查两张 T4 是否都可用，并测 fp16 矩阵乘法速度 |
 | `AGENTS.md` | 给 OpenCode 的项目规则：开发闭环、节省 GPU 配额、不泄露密钥 |
 | `.opencode/commands/gpu.md` | OpenCode 的 `/gpu` 命令 |
-| `opencode.json` | OpenCode 项目配置 |
+| `opencode.json` | OpenCode 项目配置：默认免费模型、隐藏 Copilot |
 | `tests/` | `kgpu` 的单元测试：`python3 -m unittest discover -s tests` |
 
 ## 额度与注意事项
 
 - **Kaggle GPU**：每周 30 小时，每周刷新，用 `kgpu quota` 查看剩余。把能在 CPU 上验证的都放在本地跑，GPU 只用来跑真正需要它的部分。
-- **Codespaces**：GitHub 免费账号每月有 120 核·小时（2 核机器约 60 小时）和 15 GB 存储。闲置 30 分钟会自动停止。不用时到 <https://github.com/codespaces> 停止或删除。
+- **Codespaces**：GitHub 免费账号每月有 120 核·小时（2 核机器约 60 小时）和 15 GB 存储。没有任何操作 30 分钟后会自动停止；OpenCode 干活时会在终端里输出日志，这也算操作，所以用着的时候不会停。不用时到 <https://github.com/codespaces> 停止或删除。
 - Kaggle 上的任务不依赖 Codespace：提交之后关掉 Codespace 也没关系，回来后运行 `kgpu wait` 就能取回结果。
 - 如果 token 泄露（比如发到了聊天里），到 Kaggle 设置页重新生成，并更新 Codespaces secret。
