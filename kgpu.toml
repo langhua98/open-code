@@ -1,0 +1,40 @@
+# Settings for tools/kgpu, which runs this repo on Kaggle GPUs.
+# Every value here can be left out; tools/kgpu has the same defaults.
+
+[kernel]
+# The Kaggle notebook is <your-kaggle-username>/<slug>. The title must turn into the slug
+# (lowercase, spaces to dashes) and be at least 5 characters long.
+slug = "open-code-gpu"
+title = "open-code gpu"
+# NvidiaTeslaT4 = GPU T4 x2 (free tier). Also: NvidiaL4, TpuV5E8, or "none" for a CPU-only run.
+accelerator = "NvidiaTeslaT4"
+# Needed for pip install, git clone and downloading models from the internet.
+internet = true
+private = true
+# Hard stop for one run, in seconds. Protects the weekly GPU quota from runaway jobs.
+timeout = 3600
+
+[job]
+# What runs on Kaggle, from the repo root. `tools/kgpu run -- <cmd>` overrides it for one run.
+command = "python src/gpu_check.py"
+# Installed with pip before the command if the file lists any packages.
+# Kaggle images already ship torch, transformers, etc.
+requirements = "requirements-gpu.txt"
+# Optional shell snippet run before the command, e.g. "apt-get install -y ffmpeg".
+setup = ""
+# Extra environment variables for the job. Never put secrets here: this file is committed.
+env = {}
+
+[files]
+# The repo is packed from git (tracked + new files, .gitignore respected), minus these globs.
+exclude = ["runs/**", "outputs/**", ".devcontainer/**", ".opencode/**", ".github/**"]
+# Bigger files are skipped. Put datasets and weights in a Kaggle dataset or model instead.
+max_file_mb = 5
+max_payload_mb = 20
+
+[sources]
+# Mounted read-only under /kaggle/input/ on Kaggle.
+datasets = []      # "owner/dataset-slug"
+models = []        # "owner/model/framework/variation/version"
+competitions = []  # "competition-slug"
+kernels = []       # "owner/notebook-slug"

@@ -1,0 +1,14 @@
+# Results pulled back from Kaggle, and local job outputs
+runs/
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Credentials: these belong in Codespaces Secrets, never in git
+.env
+.env.*
+kaggle.json
+access_token

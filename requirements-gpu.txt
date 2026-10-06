@@ -1,0 +1,2 @@
+# Extra packages to pip install on Kaggle before each GPU run (one per line).
+# Kaggle images already include torch, transformers, accelerate, etc.; only list what is missing.

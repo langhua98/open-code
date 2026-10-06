@@ -1,0 +1,676 @@
+#!/usr/bin/env python3
+"""kgpu: run this repo on Kaggle GPUs (T4 x2 by default) and pull the results back.
+
+  kgpu run [-- CMD ...]   package the working tree, run it on Kaggle, wait, download results
+  kgpu push [-- CMD ...]  start a run and return immediately (then use `kgpu wait`)
+  kgpu wait [RUN_ID]      wait for a pushed run and download its results
+  kgpu status             status of the latest run
+  kgpu logs [-f]          console log of the latest Kaggle session (-f follows it live)
+  kgpu quota              weekly GPU/TPU quota
+  kgpu package DIR        write the Kaggle kernel folder to DIR without pushing (debugging)
+
+Results land in runs/<run_id>/ and runs/latest points at the newest one:
+  kgpu.log           everything the job printed
+  kgpu_result.json   exit code, duration, GPUs and per-step exit codes
+  outputs/           files the job wrote to outputs/ (same as $KGPU_OUTPUT_DIR)
+
+Settings come from kgpu.toml. Credentials come from KAGGLE_API_TOKEN
+(or ~/.kaggle/access_token, or KAGGLE_USERNAME + KAGGLE_KEY).
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import fnmatch
+import io
+import json
+import os
+import secrets
+import shlex
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib  # type: ignore[no-redef]
+
+ROOT = Path(__file__).resolve().parent.parent
+ACTIVE = {"QUEUED", "RUNNING", "NEW_SCRIPT", "CANCEL_REQUESTED"}
+TERMINAL = {"COMPLETE", "ERROR", "CANCEL_ACKNOWLEDGED"}
+EXIT_INFRA = 70
+EXIT_STILL_RUNNING = 75
+# Right after a push the status endpoint can still describe the previous session,
+# so a terminal status only counts once the new run was seen active or this much time passed.
+STALE_GRACE_S = 120
+
+DEFAULTS: dict[str, dict] = {
+    "kernel": {
+        "slug": "open-code-gpu",
+        "title": "open-code gpu",
+        "accelerator": "NvidiaTeslaT4",
+        "internet": True,
+        "private": True,
+        "timeout": 3600,
+    },
+    "job": {
+        "command": "python src/gpu_check.py",
+        "requirements": "requirements-gpu.txt",
+        "setup": "",
+        "env": {},
+    },
+    "files": {
+        "exclude": ["runs/**", "outputs/**", ".devcontainer/**", ".opencode/**", ".github/**"],
+        "max_file_mb": 5,
+        "max_payload_mb": 20,
+    },
+    "sources": {"datasets": [], "models": [], "competitions": [], "kernels": []},
+}
+
+# Runs on Kaggle. tools/kgpu prepends RUN_ID, COMMAND, SETUP, REQUIREMENTS and ENV,
+# then appends PAYLOAD (base64 tar.gz of the repo) and the call to main().
+JOB_BODY = r'''
+import base64
+import io
+import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import tarfile
+import time
+
+OUT = os.environ.get("KGPU_OUT", "/kaggle/working")
+SRC = os.environ.get("KGPU_SRC", "/tmp/kgpu/project")
+ARTIFACTS = os.path.join(OUT, "outputs")
+
+
+def main():
+    started = time.time()
+    os.makedirs(ARTIFACTS, exist_ok=True)
+    log = open(os.path.join(OUT, "kgpu.log"), "w", encoding="utf-8")
+
+    def say(text):
+        print(text, flush=True)
+        log.write(text + "\n")
+        log.flush()
+
+    def run(command, env):
+        say("[kgpu] $ " + command)
+        begin = time.time()
+        proc = subprocess.Popen(
+            ["bash", "-c", command],
+            cwd=SRC,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="replace",
+        )
+        for line in proc.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            log.write(line)
+            log.flush()
+        code = proc.wait()
+        say("[kgpu] exit %d after %.1fs" % (code, time.time() - begin))
+        return code
+
+    result = {"run_id": RUN_ID, "command": COMMAND, "gpus": gpus(), "steps": []}
+    say("[kgpu] run %s on %s" % (RUN_ID, " | ".join(result["gpus"]) or "CPU (no GPU visible)"))
+    code = 0
+    try:
+        unpack()
+        env = dict(os.environ)
+        env.update(ENV)
+        env.update(KGPU_RUN_ID=RUN_ID, KGPU_OUTPUT_DIR=ARTIFACTS, PYTHONUNBUFFERED="1")
+        steps = [("command", COMMAND)]
+        if SETUP:
+            steps.insert(0, ("setup", SETUP))
+        if has_requirements(REQUIREMENTS):
+            steps.insert(0, ("requirements", "pip install -q -r " + shlex.quote(REQUIREMENTS)))
+        for name, command in steps:
+            code = run(command, env)
+            result["steps"].append({"name": name, "command": command, "exit_code": code})
+            if code != 0:
+                break
+    except Exception as error:
+        say("[kgpu] runner error: %r" % (error,))
+        result["error"] = repr(error)
+        code = 1
+    result["exit_code"] = code
+    result["duration_s"] = round(time.time() - started, 1)
+    with open(os.path.join(OUT, "kgpu_result.json"), "w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2)
+    say("[kgpu] finished with exit %d in %.1fs" % (code, result["duration_s"]))
+    log.close()
+    # Always exit 0 so Kaggle keeps the output files; the real exit code is in kgpu_result.json.
+
+
+def gpus():
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return [line.strip() for line in out.stdout.splitlines() if line.strip()]
+
+
+def unpack():
+    shutil.rmtree(SRC, ignore_errors=True)
+    os.makedirs(SRC)
+    with tarfile.open(fileobj=io.BytesIO(base64.b64decode(PAYLOAD)), mode="r:gz") as tar:
+        try:
+            tar.extractall(SRC, filter="data")
+        except TypeError:  # Python without tarfile extraction filters
+            tar.extractall(SRC)
+    # Lets jobs write to outputs/ exactly as they would locally.
+    link = os.path.join(SRC, "outputs")
+    if not os.path.exists(link):
+        os.symlink(ARTIFACTS, link)
+
+
+def has_requirements(path):
+    full = os.path.join(SRC, path)
+    if not path or not os.path.isfile(full):
+        return False
+    with open(full, encoding="utf-8") as f:
+        return any(line.strip() and not line.strip().startswith("#") for line in f)
+'''
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    try:
+        return args.handler(args)
+    except KeyboardInterrupt:
+        say("\n[kgpu] interrupted. The Kaggle run keeps going; `tools/kgpu wait` picks it up again.")
+        return 130
+
+
+def parse_args(argv: list[str] | None) -> argparse.Namespace:
+    # Everything after the first `--` is the job command, so its flags never reach argparse.
+    argv = list(sys.argv[1:] if argv is None else argv)
+    command = argv[argv.index("--") + 1 :] if "--" in argv else []
+    argv = argv[: argv.index("--")] if "--" in argv else argv
+
+    parser = argparse.ArgumentParser(
+        prog="kgpu",
+        description=__doc__.split("\n\n")[0],
+        epilog=__doc__.split("\n\n", 1)[1],
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sub = parser.add_subparsers(dest="name", required=True, metavar="COMMAND")
+
+    run = sub.add_parser("run", help="push, wait and download results")
+    add_push_args(run)
+    add_wait_args(run)
+    run.set_defaults(handler=cmd_run)
+
+    push = sub.add_parser("push", help="start a run and return immediately")
+    add_push_args(push)
+    push.set_defaults(handler=cmd_push)
+
+    wait = sub.add_parser("wait", help="wait for a pushed run and download its results")
+    wait.add_argument("run_id", nargs="?", help="defaults to the latest run")
+    add_wait_args(wait)
+    wait.set_defaults(handler=cmd_wait)
+
+    sub.add_parser("status", help="status of the latest run").set_defaults(handler=cmd_status)
+
+    logs = sub.add_parser("logs", help="console log of the latest Kaggle session")
+    logs.add_argument("-f", "--follow", action="store_true", help="stream the log while the run is active")
+    logs.set_defaults(handler=cmd_logs)
+
+    sub.add_parser("quota", help="weekly GPU/TPU quota").set_defaults(handler=cmd_quota)
+
+    package = sub.add_parser("package", help="write the kernel folder without pushing")
+    package.add_argument("dir", help="folder to write kernel-metadata.json and kgpu_job.py into")
+    package.add_argument("--user", default="your-kaggle-username", help="Kaggle username for the kernel id")
+    package.add_argument("--accelerator", help="override [kernel].accelerator")
+    package.set_defaults(handler=cmd_package)
+
+    args = parser.parse_args(argv)
+    args.command = command
+    return args
+
+
+def add_push_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--accelerator",
+        help="Kaggle machine shape: NvidiaTeslaT4 (T4 x2, default), NvidiaL4, TpuV5E8, or none for CPU",
+    )
+    parser.add_argument("--timeout", type=int, help="max run time in seconds (default: [kernel].timeout)")
+    parser.usage = f"kgpu {parser.prog.split()[-1]} [options] [-- COMMAND ...]"
+
+
+def add_wait_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--no-follow", action="store_true", help="do not stream the live log")
+    parser.add_argument(
+        "--max-wait",
+        type=float,
+        help=f"give up waiting after this many seconds (exit {EXIT_STILL_RUNNING}); the run keeps going",
+    )
+    parser.add_argument("--poll", type=float, default=15, help="seconds between status checks (default 15)")
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    api = kaggle_api()
+    state = push(api, ROOT, load_config(ROOT), job_command(args.command), args.accelerator, args.timeout)
+    return wait(api, ROOT, state, follow=not args.no_follow, max_wait=args.max_wait, poll=args.poll)
+
+
+def cmd_push(args: argparse.Namespace) -> int:
+    push(kaggle_api(), ROOT, load_config(ROOT), job_command(args.command), args.accelerator, args.timeout)
+    say("[kgpu] use `tools/kgpu wait` to wait for it and download the results")
+    return 0
+
+
+def cmd_wait(args: argparse.Namespace) -> int:
+    state = load_state(ROOT, args.run_id)
+    return wait(kaggle_api(), ROOT, state, follow=not args.no_follow, max_wait=args.max_wait, poll=args.poll)
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    state = load_state(ROOT, None)
+    status, message = kernel_status(kaggle_api(), state["kernel"])
+    say(f"run:      {state['run_id']} ({state['command']})")
+    say(f"kernel:   {state['url']}")
+    say(f"pushed:   {elapsed(time.time() - state['pushed_at'])} ago")
+    say(f"status:   {status}" + (f" ({message})" if message else ""))
+    result = read_result(ROOT / "runs" / state["run_id"])
+    if result:
+        say(f"result:   exit {result.get('exit_code')} in {elapsed(result.get('duration_s', 0))}")
+    return 0
+
+
+def cmd_logs(args: argparse.Namespace) -> int:
+    api = kaggle_api()
+    state = load_state(ROOT, None)
+    if args.follow:
+        stream_logs(api, state["kernel"])
+        return 0
+    sys.stdout.write(console_text(api.kernels_logs(state["kernel"])))
+    return 0
+
+
+def cmd_quota(args: argparse.Namespace) -> int:
+    kaggle_api().quota_view_cli()
+    return 0
+
+
+def cmd_package(args: argparse.Namespace) -> int:
+    cfg = load_config(ROOT)
+    if args.accelerator is not None:
+        cfg["kernel"]["accelerator"] = args.accelerator
+    files, skipped = collect_files(ROOT, cfg)
+    folder = Path(args.dir)
+    folder.mkdir(parents=True, exist_ok=True)
+    write_kernel(folder, args.user, new_run_id(), job_command(args.command) or cfg["job"]["command"], cfg, build_payload(ROOT, files))
+    say(f"[kgpu] wrote {folder}/kernel-metadata.json and kgpu_job.py ({len(files)} files, {len(skipped)} skipped)")
+    return 0
+
+
+def push(api, root: Path, cfg: dict, command: str | None, accelerator: str | None, timeout: int | None) -> dict:
+    if accelerator is not None:
+        cfg["kernel"]["accelerator"] = accelerator
+    if timeout is not None:
+        cfg["kernel"]["timeout"] = timeout
+    command = command or cfg["job"]["command"]
+    user = api.get_config_value(api.CONFIG_NAME_USER)
+    files, skipped = collect_files(root, cfg)
+    for name in skipped:
+        say(f"[kgpu] skipped {name}: larger than {cfg['files']['max_file_mb']} MB (use a Kaggle dataset or model)")
+    payload = build_payload(root, files)
+    size_mb = len(payload) * 4 / 3 / 1024 / 1024
+    if size_mb > cfg["files"]["max_payload_mb"]:
+        die(
+            f"code bundle is {size_mb:.1f} MB (limit {cfg['files']['max_payload_mb']} MB); "
+            "move data and weights into a Kaggle dataset/model and list it under [sources] in kgpu.toml"
+        )
+
+    run_id = new_run_id()
+    machine = machine_shape(cfg["kernel"]["accelerator"])
+    say(f"[kgpu] run {run_id}: `{command}` on {machine or 'CPU'} ({len(files)} files, {size_mb * 1024:.0f} KB)")
+    with tempfile.TemporaryDirectory(prefix="kgpu-") as folder:
+        write_kernel(Path(folder), user, run_id, command, cfg, payload)
+        response = api.kernels_push(folder, str(cfg["kernel"]["timeout"]), machine or None)
+    if response.error:
+        die(f"Kaggle rejected the push: {response.error}")
+    for field in ("invalid_dataset_sources", "invalid_model_sources", "invalid_competition_sources", "invalid_kernel_sources"):
+        if getattr(response, field, None):
+            say(f"[kgpu] warning: {field.replace('_', ' ')}: {getattr(response, field)}")
+
+    state = {
+        "run_id": run_id,
+        "kernel": f"{user}/{cfg['kernel']['slug']}",
+        "url": response.url,
+        "version": response.version_number,
+        "command": command,
+        "accelerator": machine or "none",
+        "pushed_at": time.time(),
+    }
+    run_dir = root / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "run.json").write_text(json.dumps(state, indent=2) + "\n")
+    latest = root / "runs" / "latest"
+    temp_link = root / "runs" / f".latest-{run_id}"
+    temp_link.symlink_to(run_id)
+    temp_link.replace(latest)
+    say(f"[kgpu] pushed version {response.version_number}: {response.url}")
+    return state
+
+
+def wait(api, root: Path, state: dict, follow: bool, max_wait: float | None, poll: float) -> int:
+    deadline = time.time() + max_wait if max_wait else None
+    seen_active = False
+    streamer = None
+    last = None
+    failures = 0
+    while True:
+        try:
+            status, message = kernel_status(api, state["kernel"])
+            failures = 0
+        except Exception as error:  # network blips should not abort a long wait
+            failures += 1
+            if failures >= 10:
+                die(f"cannot reach Kaggle: {error}", EXIT_INFRA)
+            say(f"[kgpu] status check failed ({error}); retrying")
+            time.sleep(poll)
+            continue
+
+        if status != last:
+            say(f"[kgpu] {elapsed(time.time() - state['pushed_at'])} {status}" + (f": {message}" if message else ""))
+            last = status
+        if status in ACTIVE:
+            seen_active = True
+            if follow and status == "RUNNING" and streamer is None:
+                # Status polling stays in charge; the stream only echoes the live log.
+                streamer = threading.Thread(target=stream_logs, args=(api, state["kernel"]), daemon=True)
+                streamer.start()
+        since_push = time.time() - state["pushed_at"]
+        if status in TERMINAL and (seen_active or since_push > STALE_GRACE_S):
+            if streamer is not None:
+                streamer.join(timeout=15)
+            result = fetch(api, root, state)
+            if result is not None or seen_active or since_push > 10 * STALE_GRACE_S:
+                return report(root, state, status, message, result)
+            # Terminal status with an older run's results: the new session has not shown up yet.
+        if deadline and time.time() > deadline:
+            say(f"[kgpu] still {status}; the run continues on Kaggle. Resume with: tools/kgpu wait {state['run_id']}")
+            return EXIT_STILL_RUNNING
+        time.sleep(poll)
+
+
+def fetch(api, root: Path, state: dict) -> dict | None:
+    """Download the session's files into runs/<run_id>/ if they belong to this run."""
+    run_dir = root / "runs" / state["run_id"]
+    with tempfile.TemporaryDirectory(prefix=".download-", dir=root / "runs") as download:
+        for attempt in range(3):
+            try:
+                api.kernels_output(state["kernel"], download, force=True, quiet=True)
+                break
+            except Exception as error:
+                if attempt == 2:
+                    die(f"could not download results ({error}); retry with: tools/kgpu wait {state['run_id']}", EXIT_INFRA)
+                say(f"[kgpu] download failed ({error}); retrying")
+                time.sleep(5 * (attempt + 1))
+        result = read_result(Path(download))
+        if result is not None and result.get("run_id") != state["run_id"]:
+            return None
+        for item in Path(download).iterdir():
+            target = run_dir / item.name
+            if target.is_dir():
+                shutil.rmtree(target)
+            shutil.move(str(item), str(target))
+    raw_log = run_dir / f"{state['kernel'].split('/')[1]}.log"
+    if raw_log.exists():
+        (run_dir / "console.txt").write_text(console_text(raw_log.read_text(encoding="utf-8")), encoding="utf-8")
+    return result
+
+
+def report(root: Path, state: dict, status: str, message: str, result: dict | None) -> int:
+    run_dir = root / "runs" / state["run_id"]
+    where = run_dir.relative_to(root)
+    if result is None:
+        say(f"===== kgpu {state['run_id']}: Kaggle session ended as {status} without a result =====")
+        if message:
+            say(f"Kaggle says: {message}")
+        say(f"files: {where}/  (console.txt has Kaggle's own log)")
+        print_tail(run_dir / "console.txt")
+        return EXIT_INFRA
+
+    code = int(result.get("exit_code", 1))
+    verdict = "SUCCESS" if code == 0 else f"FAILED (exit {code})"
+    say(f"===== kgpu {state['run_id']}: {verdict} in {elapsed(result.get('duration_s', 0))} on {describe_gpus(result.get('gpus'))} =====")
+    say(f"files: {where}/  (kgpu.log, kgpu_result.json, outputs/)")
+    print_tail(run_dir / "kgpu.log")
+    if code == 0:
+        return 0
+    return code if 0 < code < 256 else 1
+
+
+def describe_gpus(gpus: list[str] | None) -> str:
+    """["Tesla T4, 15360 MiB", "Tesla T4, 15360 MiB"] -> "2 x Tesla T4"."""
+    names = [gpu.split(",")[0].strip() for gpu in gpus or []]
+    if not names:
+        return "CPU"
+    return ", ".join(f"{names.count(name)} x {name}" for name in dict.fromkeys(names))
+
+
+def kernel_status(api, kernel: str) -> tuple[str, str]:
+    response = api.kernels_status(kernel)
+    status = getattr(response.status, "name", str(response.status)).rsplit(".", 1)[-1].upper()
+    return status, response.failure_message or ""
+
+
+def stream_logs(api, kernel: str) -> None:
+    """Print the live console log until the session ends; reconnects replay from the start."""
+    if not hasattr(api, "kernels_logs_stream"):
+        say("[kgpu] this kaggle version cannot stream logs; upgrade with: pip install -U 'kaggle>=2.2.4,<3'")
+        return
+    printed = 0
+    for attempt in range(5):
+        seen = 0
+        try:
+            for event in api.kernels_logs_stream(kernel):
+                seen += 1
+                if seen <= printed:
+                    continue
+                printed = seen
+                sys.stdout.write(str(event.get("data", "")))
+                sys.stdout.flush()
+            return
+        except Exception as error:  # the stream is best effort; status polling still finishes the job
+            say(f"\n[kgpu] log stream interrupted ({error}); reconnecting")
+            time.sleep(2 * (attempt + 1))
+
+
+def console_text(raw: str) -> str:
+    """Kaggle logs are a JSON list of {stream_name, time, data}; keep only the text."""
+    try:
+        events = json.loads(raw)
+    except ValueError:
+        return raw
+    events = events if isinstance(events, list) else [events]
+    return "".join(str(event.get("data", "")) for event in events if isinstance(event, dict))
+
+
+def collect_files(root: Path, cfg: dict) -> tuple[list[str], list[str]]:
+    limit = cfg["files"]["max_file_mb"] * 1024 * 1024
+    files: list[str] = []
+    skipped: list[str] = []
+    for name in list_files(root):
+        path = root / name
+        if not path.is_file() or any(fnmatch.fnmatch(name, pattern) for pattern in cfg["files"]["exclude"]):
+            continue
+        if path.stat().st_size > limit:
+            skipped.append(name)
+            continue
+        files.append(name)
+    return files, skipped
+
+
+def list_files(root: Path) -> list[str]:
+    """Tracked plus untracked-but-not-ignored files, so uncommitted edits are part of the run."""
+    git = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=root,
+        capture_output=True,
+    )
+    if git.returncode == 0:
+        return sorted({name for name in git.stdout.decode().split("\0") if name})
+    skip = {".git", "__pycache__", ".venv", "node_modules", "runs", "outputs"}
+    return sorted(
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and not skip.intersection(path.relative_to(root).parts)
+    )
+
+
+def build_payload(root: Path, files: list[str]) -> bytes:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz", dereference=True) as tar:
+        for name in files:
+            tar.add(root / name, arcname=name, recursive=False)
+    return buffer.getvalue()
+
+
+def write_kernel(folder: Path, user: str, run_id: str, command: str, cfg: dict, payload: bytes) -> None:
+    kernel = cfg["kernel"]
+    machine = machine_shape(kernel["accelerator"])
+    metadata = {
+        "id": f"{user}/{kernel['slug']}",
+        "title": kernel["title"],
+        "code_file": "kgpu_job.py",
+        "language": "python",
+        "kernel_type": "script",
+        "is_private": kernel["private"],
+        "enable_gpu": bool(machine) and not machine.lower().startswith("tpu"),
+        "enable_tpu": machine.lower().startswith("tpu"),
+        "enable_internet": kernel["internet"],
+        "dataset_sources": cfg["sources"]["datasets"],
+        "competition_sources": cfg["sources"]["competitions"],
+        "kernel_sources": cfg["sources"]["kernels"],
+        "model_sources": cfg["sources"]["models"],
+    }
+    if machine:
+        metadata["machine_shape"] = machine
+    (folder / "kernel-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    (folder / "kgpu_job.py").write_text(render_job(run_id, command, cfg, payload))
+
+
+def render_job(run_id: str, command: str, cfg: dict, payload: bytes) -> str:
+    encoded = base64.b64encode(payload).decode()
+    wrapped = "\n".join(encoded[i : i + 100] for i in range(0, len(encoded), 100))
+    env = {str(key): str(value) for key, value in cfg["job"]["env"].items()}
+    header = "\n".join(
+        [
+            "# Generated by tools/kgpu for a single run. Edit the repo, not this file.",
+            f"RUN_ID = {run_id!r}",
+            f"COMMAND = {command!r}",
+            f"SETUP = {cfg['job']['setup']!r}",
+            f"REQUIREMENTS = {cfg['job']['requirements']!r}",
+            f"ENV = {env!r}",
+        ]
+    )
+    return f'{header}\n{JOB_BODY}\nPAYLOAD = """\n{wrapped}\n"""\n\nmain()\n'
+
+
+def machine_shape(accelerator: str | None) -> str:
+    if not accelerator or accelerator.lower() in ("none", "cpu"):
+        return ""
+    return accelerator
+
+
+def job_command(words: list[str]) -> str | None:
+    if not words:
+        return None
+    # One argument is taken as a shell snippet, so `kgpu run -- "a && b"` works.
+    return words[0] if len(words) == 1 else shlex.join(words)
+
+
+def load_config(root: Path) -> dict:
+    path = root / "kgpu.toml"
+    data = tomllib.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    return {section: {**defaults, **data.get(section, {})} for section, defaults in DEFAULTS.items()}
+
+
+def load_state(root: Path, run_id: str | None) -> dict:
+    path = root / "runs" / (run_id or "latest") / "run.json"
+    if not path.exists():
+        die(f"no run found at {path.relative_to(root)}; start one with `tools/kgpu run`")
+    return json.loads(path.read_text())
+
+
+def read_result(folder: Path) -> dict | None:
+    path = folder / "kgpu_result.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return None
+
+
+def kaggle_api():
+    try:
+        from kaggle.api.kaggle_api_extended import KaggleApi
+    except ImportError:
+        die("the Kaggle CLI is not installed: pip install 'kaggle>=2.2.4,<3'")
+    api = KaggleApi()
+    try:
+        api.authenticate()
+    except SystemExit:
+        die(
+            "Kaggle login failed. Create a token at https://www.kaggle.com/settings/api and expose it as "
+            "KAGGLE_API_TOKEN (in Codespaces: GitHub Settings > Codespaces > Secrets, then rebuild or restart)."
+        )
+    return api
+
+
+def new_run_id() -> str:
+    return time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
+
+
+def elapsed(seconds: float) -> str:
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m{seconds % 60:02d}s"
+    return f"{seconds // 3600}h{seconds % 3600 // 60:02d}m"
+
+
+def print_tail(path: Path, lines: int = 40) -> None:
+    if not path.exists():
+        return
+    tail = path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]
+    say(f"--- last {len(tail)} lines of {path.name} ---")
+    for line in tail:
+        say(line)
+
+
+def say(text: str) -> None:
+    print(text, flush=True)
+
+
+def die(message: str, code: int = 2):
+    print(f"kgpu: {message}", file=sys.stderr, flush=True)
+    sys.exit(code)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
