@@ -25,20 +25,13 @@ runs/<编号>/：日志、结果、输出文件 ──────────�
 1. 账号需要完成**手机号验证**，否则不能用 GPU，也不能联网（Settings → Phone verification）。
 2. 打开 <https://www.kaggle.com/settings/api>，在 **API** 一栏点击 **Generate New Token**，复制生成的 token（以 `KGAT_` 开头）。
 
-### 2. 把 token 存进 GitHub Codespaces Secrets
+### 2. 创建 Codespace，同时填入 token
 
-打开 <https://github.com/settings/codespaces>，在 **Codespaces secrets** 里点击 **New secret**：
+打开 <https://codespaces.new/langhua98/open-code>。页面上有一栏 **KAGGLE_API_TOKEN**，把 token 粘贴进去，然后点击 **Create codespace**。GitHub 会把它保存成你的 Codespaces secret，以后新建的 Codespace 都会自动带上。
 
-| Name | Value | Repository access |
-| --- | --- | --- |
-| `KAGGLE_API_TOKEN` | 你的 Kaggle token | 选择 `langhua98/open-code` |
-| `OPENCODE_SERVER_PASSWORD`（可选） | 自己设一个密码 | 选择 `langhua98/open-code` |
+另一种方式是先在 <https://github.com/settings/codespaces> 里点 **New secret** 手动添加：Name 填 `KAGGLE_API_TOKEN`，Repository access 选 `langhua98/open-code`。可选的 `OPENCODE_SERVER_PASSWORD` 也可以用同样方式添加，作为 Web 界面的密码。
 
-Token 只存在这里，**不要写进仓库里的任何文件**。
-
-### 3. 创建 Codespace
-
-打开 <https://codespaces.new/langhua98/open-code>，或者进入仓库页面 → **Code** → **Codespaces** → **Create codespace on main**。
+Token 只存在 Codespaces secrets 里，**不要写进仓库里的任何文件**。
 
 第一次创建大约需要 3–5 分钟，会自动完成：
 
@@ -51,8 +44,9 @@ Token 只存在这里，**不要写进仓库里的任何文件**。
 ### 打开 OpenCode
 
 - **手机推荐用 Web 界面**：在 Codespace 底部的 **端口（Ports）** 面板找到 `4096 (OpenCode Web)`，点地球图标在浏览器中打开。地址形如 `https://<codespace名>-4096.app.github.dev`。端口默认是私有的，只有登录了 GitHub 的你自己能访问。如果设置了 `OPENCODE_SERVER_PASSWORD`，用户名填 `opencode`。
+  - **每个浏览器第一次打开时**：点「添加项目」（或输入框下方的「新建项目」），在搜索框输入 `/workspaces/open-code`，选中第一项。之后这个浏览器会记住这个项目。
 - **或者在终端里运行** `opencode`，进入终端界面（TUI）。
-- **模型**：不做任何配置，也能直接用 OpenCode Zen 的免费模型。要用自己的模型，在 OpenCode 里输入 `/connect` 接入 DeepSeek、Kimi、智谱、GitHub Copilot 等；也可以把对应的 API Key（例如 `DEEPSEEK_API_KEY`）加到 Codespaces secrets 里。
+- **模型**：不做任何配置，也能直接用 OpenCode Zen 的免费模型（默认是 Big Pickle）。免费模型偶尔会提示 `Rate limit exceeded`：点输入框下方的模型名，换一个免费模型（例如 Nemotron 3 Ultra Free）就行。想要稳定，可以在 OpenCode 里输入 `/connect` 接入 DeepSeek、Kimi、智谱、GitHub Copilot 等；也可以把对应的 API Key（例如 `DEEPSEEK_API_KEY`）加到 Codespaces secrets 里。
 
 ### 在 GPU 上测试：`/gpu`
 
