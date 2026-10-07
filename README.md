@@ -2,6 +2,8 @@
 
 在手机上写 AI 工程：代码和 [OpenCode](https://github.com/anomalyco/opencode) 跑在 GitHub Codespaces 里；需要 GPU 时，一条命令把代码发到 Kaggle 的免费 T4 ×2 上运行，再把日志和结果拉回来。OpenCode 读日志、改代码、再测试，形成闭环。
 
+![架构图](docs/architecture.png)
+
 ```
 📱 手机浏览器
       │
