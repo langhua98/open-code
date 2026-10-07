@@ -45,7 +45,11 @@ Token 只存在 Codespaces secrets 里，**不要写进仓库里的任何文件*
 
 - **手机推荐用 Web 界面**：在 Codespace 底部的 **端口（Ports）** 面板找到 `4096 (OpenCode Web)`，点地球图标在浏览器中打开。地址形如 `https://<codespace名>-4096.app.github.dev`。端口默认是私有的，只有登录了 GitHub 的你自己能访问。如果设置了 `OPENCODE_SERVER_PASSWORD`，用户名填 `opencode`。
   - **每个浏览器第一次打开时**：点「添加项目」（或输入框下方的「新建项目」），在搜索框输入 `/workspaces/open-code`，选中第一项。之后这个浏览器会记住这个项目。
-  - **页面空白或打不开**：说明 OpenCode 没在运行。在 Codespace 的终端里输入 `web` 回车就能启动；输入 `web restart` 可以重启。运行 OpenCode 的那个终端不要关，关掉它 OpenCode 就停了。
+  - **iPhone 上全屏用（推荐）**：在 Safari 里打开上面的地址，点「…」→「共享」→「添加到主屏幕」，开关保持打开，点「添加」。以后点主屏幕上的 OpenCode 图标，打开就是全屏的，没有浏览器的按钮。
+    - 要添加的是 OpenCode 自己的页面。从入口页点进去的 OpenCode 会被套在一个上下都有按钮的小浏览器里，因为它和入口页不是同一个网站。
+    - 主屏幕上的 OpenCode 和 Safari 的存储是分开的，第一次进去要再添加一次项目。
+    - 私有端口的 GitHub 登录 3 小时过期，过期后打开时会闪一下 GitHub 登录页，然后自动回来。
+  - **页面空白或打不开**：说明 OpenCode 没在运行。在 Codespace 的终端里输入 `web` 回车就能启动；输入 `web restart` 可以重启。运行 OpenCode 的那个终端不要关，关掉它 OpenCode 就停了。全屏的 OpenCode 没有刷新按钮：从后台划掉它，再点图标打开。
 - **或者在终端里运行** `opencode`，进入终端界面（TUI）。
 - **模型**：默认用 OpenCode Zen 的免费模型 **Nemotron 3 Ultra Free**，不需要任何 key。免费模型经常有人排队：如果提示 `Rate limit exceeded`、`Free usage exceeded` 或 `Endpoint is unavailable`，点输入框下方的模型名，换一个标着「免费」的模型再发一次就行。
   - GitHub Copilot 已经在 `opencode.json` 的 `disabled_providers` 里隐藏了，因为 Copilot 免费版不包含 Claude Sonnet 这类模型，选了只会报错。以后如果订阅了 Copilot Pro，把 `"github-copilot"` 从这个列表里删掉就能用。

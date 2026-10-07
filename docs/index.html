@@ -40,6 +40,11 @@
   }
   .step h2 { font-size: 17px; margin: 0 0 4px; }
   .step p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+  .card > h2 { font-size: 17px; margin: 0 0 4px; }
+  .card > p { margin: 0; color: var(--muted); font-size: 14px; }
+  .card ol { margin: 8px 0 0; padding-left: 20px; color: var(--muted); font-size: 14px; }
+  .card li + li { margin-top: 6px; }
+  .card li b { color: var(--text); font-weight: 600; }
   a.btn {
     display: block; text-align: center; text-decoration: none; font-weight: 600; font-size: 17px;
     padding: 14px; border-radius: 12px; background: var(--accent); color: var(--accent-text);
@@ -106,10 +111,20 @@
   </section>
 
   <section class="card">
-    <h2 style="font-size:17px;margin:0 0 4px">OpenCode 页面空白？</h2>
-    <p style="margin:0;color:var(--muted);font-size:14px">在 Codespace 的终端里输入下面这个命令，回车，然后刷新 OpenCode 页面。</p>
+    <h2>让 OpenCode 全屏（只做一次）</h2>
+    <p>从这里点开的 OpenCode 会套一层上下都有按钮的小浏览器，因为它和这个入口不是同一个网站。把 OpenCode 自己放到主屏幕，打开就是全屏的：</p>
+    <ol>
+      <li>点上面的<b>「打开 OpenCode」</b>，再点右下角的<b>指南针</b>图标，换到 Safari 里打开。</li>
+      <li>在 Safari 里点<b>「…」</b>→<b>「共享」</b>→<b>「添加到主屏幕」</b>，开关保持打开，点<b>「添加」</b>。</li>
+      <li>以后点主屏幕上的 <b>OpenCode</b> 图标。第一次进去要再添加一次项目（文件夹在下面），原来的对话都还在。</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>OpenCode 页面空白？</h2>
+    <p>在 Codespace 的终端里输入下面这个命令，回车，然后刷新 OpenCode 页面。全屏的 OpenCode 没有刷新按钮：从后台划掉它，再点图标打开。</p>
     <div class="copy"><code>web</code><button data-copy="web">复制</button></div>
-    <p style="margin:12px 0 0;color:var(--muted);font-size:14px">新建会话时，项目选这个文件夹：</p>
+    <p style="margin-top:12px">新建会话时，项目选这个文件夹：</p>
     <div class="copy"><code>/workspaces/open-code</code><button data-copy="/workspaces/open-code">复制</button></div>
   </section>
 
@@ -131,7 +146,7 @@
     </details>
   </section>
 
-  <p class="note">提示：用浏览器的「添加到主屏幕」，以后一点就能打开这个入口。</p>
+  <p class="note">这个入口页也可以添加到主屏幕，用来唤醒 Codespace。</p>
 </main>
 <div class="toast" id="toast"></div>
 
