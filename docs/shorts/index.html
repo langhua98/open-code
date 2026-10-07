@@ -253,7 +253,7 @@ function createSlide(item){
     if(!video.duration) return;
     progressBar.style.width = ((video.currentTime / video.duration)*100)+'%';
   });
-  // 第一次播放时 worker 要先去 Telegram 换 file_id，偶尔超时：自动重试一次，再失败就让用户点一下重试
+  // 第一次播放时 worker 要先去 Telegram 换 file_id，偶尔超时或被限流：自动重试两次，再失败就让用户点一下重试
   const errBox = el.querySelector('.slide-error');
   function reloadVideo(){
     errBox.classList.remove('show');
@@ -261,7 +261,8 @@ function createSlide(item){
     if (video === currentVideo) video.play().catch(()=>{});
   }
   video.addEventListener('error', ()=>{
-    if (!video.dataset.retried) { video.dataset.retried = '1'; setTimeout(reloadVideo, 1500); }
+    const n = Number(video.dataset.retried || 0);
+    if (n < 2) { video.dataset.retried = String(n + 1); setTimeout(reloadVideo, 1500 * (n + 1)); }
     else errBox.classList.add('show');
   });
   errBox.addEventListener('click', (e)=>{ e.stopPropagation(); reloadVideo(); });

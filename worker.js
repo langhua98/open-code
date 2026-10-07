@@ -31,13 +31,20 @@ function once(key, fn) {
   return PENDING.get(key);
 }
 
-async function tg(env, method, params = {}) {
+async function tg(env, method, params = {}, retried = false) {
   const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(params),
   });
-  return r.json();
+  const j = await r.json();
+  // 刷得快时 TG 会限流 (429):按它给的等待时间重试一次,最多等 5 秒
+  if (j && j.error_code === 429 && !retried) {
+    const wait = Math.min(5, j.parameters?.retry_after || 1);
+    await new Promise((ok) => setTimeout(ok, wait * 1000));
+    return tg(env, method, params, true);
+  }
+  return j;
 }
 
 async function loadIndex(env) {
@@ -176,7 +183,8 @@ export default {
       const range = req.headers.get("range");
       if (range) headers["range"] = range;
       const up = await fetch(fileUrl, { headers });
-      return proxyResp(up);
+      // TG 文件服务器返回 application/octet-stream 且不带 Accept-Ranges,iPhone 的 Safari 常因此判定视频无法播放
+      return proxyResp(up, { "content-type": meta.mime || "video/mp4", "accept-ranges": "bytes" });
     }
 
     // 5) 封面: /thumb/6515.jpg
@@ -189,7 +197,7 @@ export default {
       const { path, error } = await filePath(env, fid);
       if (!path) return new Response(error, { status: 502, headers: cors });
       const up = await fetch(`https://api.telegram.org/file/bot${env.BOT_TOKEN}/${path}`);
-      return proxyResp(up, { "cache-control": "public, max-age=86400" });
+      return proxyResp(up, { "content-type": "image/jpeg", "cache-control": "public, max-age=86400" });
     }
 
     return new Response("ok", { headers: cors });
