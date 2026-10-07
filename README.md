@@ -37,7 +37,7 @@ Token 只存在 Codespaces secrets 里，**不要写进仓库里的任何文件*
 
 第一次创建大约需要 3–5 分钟，会自动完成：
 
-- 安装 OpenCode 和 Kaggle CLI；
+- 安装 OpenCode、它用的工具（浏览器、GitHub 命令 `gh`、Docker、文档处理库）和 Kaggle CLI；
 - 用你的 token 登录 Kaggle，并打印本周 GPU 配额；
 - 编辑器连上以后，在一个终端里启动 OpenCode 的 Web 界面（4096 端口）。以后每次打开这个 Codespace，都会自动这样启动。
 
@@ -56,6 +56,33 @@ Token 只存在 Codespaces secrets 里，**不要写进仓库里的任何文件*
 - **模型**：默认用 OpenCode Zen 的免费模型 **Nemotron 3 Ultra Free**，不需要任何 key。免费模型经常有人排队：如果提示 `Rate limit exceeded`、`Free usage exceeded` 或 `Endpoint is unavailable`，点输入框下方的模型名，换一个标着「免费」的模型再发一次就行。
   - GitHub Copilot 已经在 `opencode.json` 的 `disabled_providers` 里隐藏了，因为 Copilot 免费版不包含 Claude Sonnet 这类模型，选了只会报错。以后如果订阅了 Copilot Pro，把 `"github-copilot"` 从这个列表里删掉就能用。
   - 想要稳定，可以在 OpenCode 里输入 `/connect`，接入 DeepSeek、Kimi、智谱等。
+
+### OpenCode 能用的工具
+
+除了读写文件、运行命令，OpenCode 在这个 Codespace 里还能用下面这些工具。直接用中文告诉它要做什么就行，它会自己挑工具：
+
+| 工具 | 能做什么 | 可以这样说 |
+| --- | --- | --- |
+| 浏览器（Playwright） | 打开网页、点按钮、填表、截图 | 「用浏览器打开 example.com，告诉我页面上写了什么」 |
+| 网页搜索 | 查最新的资料和报错的解决办法 | 「搜一下这个报错怎么解决」 |
+| GitHub 命令 `gh` | 查看和创建 Issue、PR，查看 Actions 运行结果 | 「用 gh 看一下这个仓库最近的 Issue」 |
+| Docker | 运行容器 | 重建容器以后才有，见下面 |
+| 文档处理库 | 读写 PDF、Word、Excel、PPT，画图表 | 「把这个 Excel 画成折线图」 |
+| 技能 | 代码审查、安全检查、上网调研、处理文档 | 「审查一下我的改动」「做个安全检查」 |
+
+- 浏览器截图保存在 `.playwright-mcp/`，生成的文档放在 `outputs/`，这两个目录都不会提交到 git。
+- 推送代码、开 PR 之前，OpenCode 会先问你。
+- 免费模型用这些工具的本事一般：简单的事情可以，步骤很多的网页操作容易出错。
+
+**已经在用的 Codespace 怎么更新**：在 Codespace 的终端里依次运行下面三条命令，大约需要 3 分钟：
+
+```bash
+git pull
+bash .devcontainer/setup.sh
+web restart
+```
+
+除了 Docker，其它工具马上就能用。Docker 要重建容器才有：点左上角的菜单 →「View（查看）」→「Command Palette（命令面板）」，输入 `Rebuild Container`，选择「Codespaces: Rebuild Container」。重建会清掉 `/workspaces` 以外的文件。OpenCode 的聊天记录已经由 `web` 命令搬到了 `/workspaces/.opencode-data`，重建后还在。
 
 ### 在 GPU 上测试：`/gpu`
 
@@ -103,9 +130,9 @@ kgpu quota                        # 本周 GPU 配额
 
 | 路径 | 作用 |
 | --- | --- |
-| `.devcontainer/` | Codespaces 配置：Python 3.12 + Node，自动安装 OpenCode 和 Kaggle CLI，每次连上后启动 Web 界面 |
+| `.devcontainer/` | Codespaces 配置：Python 3.12 + Node + Docker，自动安装 OpenCode、浏览器、`gh`、文档处理库和 Kaggle CLI，每次连上后启动 Web 界面 |
 | `docs/` | 手机入口页（GitHub Pages）：<https://langhua98.github.io/open-code/>，一点唤醒 Codespace、打开 OpenCode |
-| `tools/web` | 启动 OpenCode 网页版（终端里输入 `web`，重启用 `web restart`），并显示手机上要打开的网址 |
+| `tools/web` | 启动 OpenCode 网页版（终端里输入 `web`，重启用 `web restart`），并显示手机上要打开的网址；把聊天记录放在 `/workspaces/.opencode-data`，重建容器也不丢 |
 | `tools/kgpu` | Kaggle GPU 运行器 |
 | `kgpu.toml` | Kaggle 运行配置：默认命令、GPU 型号、联网、超时、数据集和模型挂载 |
 | `requirements-gpu.txt` | Kaggle 上额外安装的 pip 包 |
@@ -113,7 +140,8 @@ kgpu quota                        # 本周 GPU 配额
 | `src/gpu_check.py` | 硬件自检：检查两张 T4 是否都可用，并测 fp16 矩阵乘法速度 |
 | `AGENTS.md` | 给 OpenCode 的项目规则：开发闭环、节省 GPU 配额、不泄露密钥 |
 | `.opencode/commands/gpu.md` | OpenCode 的 `/gpu` 命令 |
-| `opencode.json` | OpenCode 项目配置：默认免费模型、隐藏 Copilot |
+| `.opencode/skills/` | OpenCode 的技能：代码审查、安全检查、上网调研、处理文档 |
+| `opencode.json` | OpenCode 项目配置：默认免费模型、隐藏 Copilot、接上浏览器工具 |
 | `tests/` | `kgpu` 的单元测试：`python3 -m unittest discover -s tests` |
 
 ## 额度与注意事项

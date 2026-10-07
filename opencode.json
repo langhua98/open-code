@@ -3,7 +3,14 @@
   "model": "opencode/nemotron-3-ultra-free",
   "small_model": "opencode/nemotron-3.5-lightning-free",
   "disabled_providers": ["github-copilot"],
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": ["playwright-mcp", "--headless", "--browser", "chromium"],
+      "timeout": 20000
+    }
+  },
   "watcher": {
-    "ignore": ["runs/**", "outputs/**"]
+    "ignore": ["runs/**", "outputs/**", ".playwright-mcp/**"]
   }
 }

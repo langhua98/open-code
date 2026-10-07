@@ -14,7 +14,15 @@ if [ -n "${CODESPACE_NAME:-}" ]; then
 fi
 
 if [ "${1:-}" = "restart" ]; then
-  pkill -f "opencode serve --port 4096" && sleep 1
+  pkill -f "opencode serve --port 4096"
+  # Wait until it has exited and released the port (an exiting process vanishes from pgrep
+  # slightly before its socket closes).
+  for _ in $(seq 1 20); do
+    if ! pgrep -f "opencode serve --port 4096" >/dev/null && ! (echo >/dev/tcp/127.0.0.1/4096) 2>/dev/null; then
+      break
+    fi
+    sleep 0.5
+  done
 fi
 
 if (echo >/dev/tcp/127.0.0.1/4096) 2>/dev/null; then
@@ -22,6 +30,31 @@ if (echo >/dev/tcp/127.0.0.1/4096) 2>/dev/null; then
   echo "要重启请输入：web restart"
   exit 0
 fi
+
+# OpenCode keeps chats in ~/.local/share/opencode, which "Rebuild Container" wipes. Move them
+# under /workspaces, which survives rebuilds, and link them back.
+keep_chats() {
+  local data="${XDG_DATA_HOME:-$HOME/.local/share}/opencode" kept=/workspaces/.opencode-data
+  [ -d /workspaces ] && [ ! -L "$data" ] || return 0
+  # Never move the database while any OpenCode process (e.g. the terminal UI) may be using it.
+  ps -C opencode -o stat= | grep -qv '^Z' && return 0
+  if [ -d "$kept" ]; then
+    # Chats from before a rebuild are already kept: set aside what the new container created.
+    if [ -e "$data" ]; then mv "$data" "$data.before-link-$(date +%Y%m%d%H%M%S)" || return 0; fi
+  else
+    # /workspaces can belong to root; the codespace user has passwordless sudo.
+    mkdir "$kept" 2>/dev/null || { sudo -n mkdir "$kept" && sudo -n chown "$(id -u):$(id -g)" "$kept"; } || return 0
+    if [ -e "$data" ]; then
+      cp -a "$data/." "$kept/" || { rm -rf "$kept" 2>/dev/null || sudo -n rm -rf "$kept"; return 0; }
+      rm -rf "$data"
+    fi
+  fi
+  mkdir -p "$(dirname "$data")" && ln -s "$kept" "$data"
+}
+keep_chats
+
+# Web search for every model, not only the ones from the OpenCode provider.
+export OPENCODE_ENABLE_EXA=1
 
 echo "OpenCode 网页版：$url"
 echo "这个终端请保持打开，关掉它 OpenCode 就停了。"

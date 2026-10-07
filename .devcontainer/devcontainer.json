@@ -1,12 +1,14 @@
 {
   "name": "open-code: OpenCode + Kaggle GPU",
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "build": { "dockerfile": "Dockerfile" },
   "features": {
-    "ghcr.io/devcontainers/features/node:1": { "version": "lts" }
+    "ghcr.io/devcontainers/features/node:1": { "version": "lts" },
+    // Docker inside the codespace. An existing codespace gets it after "Rebuild Container".
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
   },
-  // Installs OpenCode and the Kaggle CLI once. Each time the editor connects, tools/web serves
-  // the OpenCode web UI in the foreground of a terminal (a background process from
-  // postStartCommand does not survive in Codespaces).
+  // Installs OpenCode, its tools (browser, gh, document libraries) and the Kaggle CLI once.
+  // Each time the editor connects, tools/web serves the OpenCode web UI in the foreground of a
+  // terminal (a background process from postStartCommand does not survive in Codespaces).
   "postCreateCommand": "bash .devcontainer/setup.sh",
   "postAttachCommand": "bash tools/web",
   "forwardPorts": [4096],

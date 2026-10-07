@@ -15,3 +15,6 @@ access_token
 
 # Local CLI state
 .wrangler/
+
+# Screenshots and downloads from OpenCode's browser tool
+.playwright-mcp/
