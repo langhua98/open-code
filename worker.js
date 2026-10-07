@@ -81,14 +81,28 @@ export default {
       return new Response(JSON.stringify({ ok: true, channel: env.CHANNEL_ID || null }), { headers: { ...JSON_HDR, ...cors } });
     }
 
-    // 3) 清单: /api/list?offset=0&limit=20&q=关键词
+    // 3) 清单: /api/list?offset=0&limit=20&q=关键词&shuffle=1&seed=123
+    //    shuffle=1 时用 seed 做确定性洗牌:同一 seed 翻页不重复,换 seed 换一批随机
     if (u.pathname === "/api/list") {
       const index = await loadIndex(env);
       const q = (u.searchParams.get("q") || "").trim().toLowerCase();
       const offset = Math.max(0, Number(u.searchParams.get("offset") || 0));
       const limit = Math.min(100, Math.max(1, Number(u.searchParams.get("limit") || 20)));
-      let arr = index;
+      let arr = index.slice();
       if (q) arr = arr.filter((x) => (x.caption || "").toLowerCase().includes(q));
+      if (u.searchParams.get("shuffle") === "1") {
+        let s = Number(u.searchParams.get("seed") || Date.now()) >>> 0;
+        const rnd = () => {
+          s |= 0; s = (s + 0x6d2b79f5) | 0;
+          let t = Math.imul(s ^ (s >>> 15), 1 | s);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+        for (let i = arr.length - 1; i > 0; i--) {
+          const j = Math.floor(rnd() * (i + 1));
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+      }
       const total = arr.length;
       const items = arr.slice(offset, offset + limit).map((x) => ({
         id: x.id,

@@ -34,6 +34,7 @@
     cursor:pointer;white-space:nowrap;
   }
   .dot{width:6px;height:6px;border-radius:50%;background:#25f4ee;box-shadow:0 0 8px #25f4ee;animation:pulse 2s infinite}
+  .api-badge.on{border-color:var(--accent2);color:#fff}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
   .feed{
     height:100vh;height:100dvh;width:100vw;
@@ -101,6 +102,7 @@
     <input id="qInput" placeholder="搜索文案 / #标签，例如 美食、旅行" />
     <span class="pill" id="countPill">0 视频</span>
   </div>
+  <div class="api-badge on" id="shuffleBtn" title="点击切换 随机/顺序"><span id="shuffleTxt">🔀 随机开</span></div>
   <div class="api-badge" id="apiBadge" title="点击切换 Worker 地址"><span class="dot" id="apiDot"></span><span id="apiStatus">连接中…</span></div>
 </div>
 
@@ -130,8 +132,8 @@ if (qs.get('api')) {
 const WORKER_BASE = (qs.get('api') || savedBase || 'https://xiaoju-shorts.langhua98.workers.dev').replace(/\/$/, '');
 
 const API = {
-  // 清单：GET /api/list?offset=0&limit=20&q=关键词 -> {total, items:[{id,caption,duration,size,date}]}
-  list: (offset, limit, q) => `${WORKER_BASE}/api/list?offset=${offset}&limit=${limit}&q=${encodeURIComponent(q||'')}`,
+  // 清单：GET /api/list?offset=0&limit=20&q=关键词&shuffle=1&seed=123 -> {total, items:[{id,caption,duration,size,date}]}
+  list: (offset, limit, q, seed) => `${WORKER_BASE}/api/list?offset=${offset}&limit=${limit}&q=${encodeURIComponent(q||'')}` + (seed == null ? '' : `&shuffle=1&seed=${seed}`),
   // 播放：/stream/{id}.mp4 - worker 需回 206 + Range
   stream: (id) => `${WORKER_BASE}/stream/${id}.mp4`,
   // 封面：/thumb/{id}.jpg
@@ -162,7 +164,7 @@ const MOCK_CAPTIONS = [
   "新学的手势舞挑战一下 #跳舞 #挑战",
 ];
 
-let state = { offset: 0, limit: 20, total: 0, q: "", loading: false, items: [], isMock: false, observers: new Map() };
+let state = { offset: 0, limit: 20, total: 0, q: "", loading: false, items: [], isMock: false, observers: new Map(), seed: Math.floor(Math.random() * 1e9) };
 
 // 默认有声：浏览器只允许静音自动播，所以首次触碰屏幕时打开声音，之后所有视频都有声
 let soundOn = false;
@@ -185,6 +187,19 @@ const qInput = document.getElementById('qInput');
 const countPill = document.getElementById('countPill');
 const apiStatus = document.getElementById('apiStatus');
 const apiDot = document.getElementById('apiDot');
+const shuffleBtn = document.getElementById('shuffleBtn');
+const shuffleTxt = document.getElementById('shuffleTxt');
+function renderShuffleBtn(){
+  const on = state.seed != null;
+  shuffleBtn.classList.toggle('on', on);
+  shuffleTxt.textContent = on ? '🔀 随机开' : '🔀 顺序';
+}
+shuffleBtn.addEventListener('click', () => {
+  state.seed = (state.seed == null) ? Math.floor(Math.random() * 1e9) : null;
+  renderShuffleBtn();
+  loadMore(true);
+});
+renderShuffleBtn();
 
 document.getElementById('apiBadge').addEventListener('click', () => {
   const cur = localStorage.getItem('worker_base') || '';
@@ -206,7 +221,7 @@ function extractTags(caption){ return caption.match(/#[^\s#]+/g) || []; }
 // 健康检查 + 真实请求 + mock 回退
 async function fetchList(offset, limit, q){
   try{
-    const url = API.list(offset, limit, q);
+    const url = API.list(offset, limit, q, state.seed);
     const res = await fetch(url, {headers:{'Accept':'application/json'}});
     if(!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
@@ -225,6 +240,11 @@ async function fetchList(offset, limit, q){
       const cap = MOCK_CAPTIONS[i % MOCK_CAPTIONS.length] + (q ? ` 搜:${q}` : '');
       if(q && !cap.toLowerCase().includes(q.toLowerCase())) continue;
       all.push({id, caption: cap});
+    }
+    if (state.seed != null) {
+      let s = state.seed >>> 0;
+      const rnd = () => { s |= 0; s = (s + 0x6d2b79f5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+      for (let i = all.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [all[i], all[j]] = [all[j], all[i]]; }
     }
     return {total: all.length, items: all.slice(offset, offset+limit)};
   }
