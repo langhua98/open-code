@@ -24,7 +24,8 @@
     padding:8px 14px;transition:.2s;
   }
   .search-wrap:focus-within{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.2)}
-  .search-wrap input{flex:1;background:transparent;border:0;outline:0;color:#fff;font-size:14px}
+  .search-wrap{min-width:0}
+  .search-wrap input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:#fff;font-size:14px}
   .search-wrap input::placeholder{color:rgba(255,255,255,.5)}
   .pill{font-size:11px;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.15);color:rgba(255,255,255,.7);white-space:nowrap}
   .api-badge{
@@ -33,6 +34,10 @@
     border:1px solid rgba(255,255,255,.1);padding:6px 10px;border-radius:999px;backdrop-filter:blur(10px);
     cursor:pointer;white-space:nowrap;
   }
+  .topbar{gap:8px}
+  @media (max-width:520px){#apiStatus{display:none}}
+  .slide-error{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:7;display:none;padding:10px 16px;border-radius:999px;background:rgba(0,0,0,.6);font-size:13px;color:#fff;cursor:pointer}
+  .slide-error.show{display:block}
   .dot{width:6px;height:6px;border-radius:50%;background:#25f4ee;box-shadow:0 0 8px #25f4ee;animation:pulse 2s infinite}
   .api-badge.on{border-color:var(--accent2);color:#fff}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
@@ -87,9 +92,6 @@
   .ctrl-btn{width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.4);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;cursor:pointer}
   .status{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:rgba(255,255,255,.6);z-index:2}
   .spinner{width:28px;height:28px;border:2px solid rgba(255,255,255,.15);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
-  .hint{position:fixed;left:16px;bottom:16px;z-index:60;background:rgba(0,0,0,.6);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.1);padding:10px 14px;border-radius:12px;font-size:11px;line-height:1.5;color:rgba(255,255,255,.7);max-width:320px}
-  .hint b{color:#fff}
-  .hint code{background:rgba(255,255,255,.1);padding:1px 5px;border-radius:4px;font-size:11px;color:#25f4ee}
   @media (min-width:768px){.info{right:90px;padding-left:24px}.actions{right:18px}}
   #soundTip{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:60;background:rgba(0,0,0,.65);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.15);color:#fff;font-size:13px;padding:9px 16px;border-radius:999px;white-space:nowrap;animation:pulse 2s infinite}
 </style>
@@ -99,25 +101,16 @@
 <div class="topbar">
   <div class="search-wrap">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.6)" stroke-width="2"><circle cx="11" cy="11" r="6"/><path d="m21 21-4.3-4.3"/></svg>
-    <input id="qInput" placeholder="搜索文案 / #标签，例如 美食、旅行" />
+    <input id="qInput" placeholder="搜索文案 / #标签" />
     <span class="pill" id="countPill">0 视频</span>
   </div>
-  <div class="api-badge on" id="shuffleBtn" title="点击切换 随机/顺序"><span id="shuffleTxt">🔀 随机开</span></div>
+  <div class="api-badge on" id="shuffleBtn" title="点击切换 随机/顺序"><span id="shuffleTxt">🔀 随机</span></div>
   <div class="api-badge" id="apiBadge" title="点击切换 Worker 地址"><span class="dot" id="apiDot"></span><span id="apiStatus">连接中…</span></div>
 </div>
 
 <div class="feed" id="feed"></div>
 
 <div id="soundTip">🔈 轻触屏幕开启声音</div>
-
-<div class="hint" id="hint">
-  <b>接口已打通（worker.js 对应）：</b><br>
-  1. 清单 <code>GET /api/list?offset=0&limit=20&q=关键词</code><br>
-  2. 播放 <code>/stream/{id}.mp4</code>（206 Range）<br>
-  3. 封面 <code>/thumb/{id}.jpg</code><br><br>
-  操作：<b>上下滑 / 滚轮 / ↑↓</b> 切换 · <b>单击</b> 暂停 · <b>双击</b> 点赞 · <b>拖进度条</b><br>
-  后端地址：<code>?api=https://你的worker.workers.dev</code> 可指定，不填则用同域。
-</div>
 
 <script>
 /** =======================
@@ -142,29 +135,7 @@ const API = {
   health: () => `${WORKER_BASE}/api/health`,
 };
 
-const DEMO_VIDEOS = [
-  "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-  "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-  "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-  "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
-  "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
-  "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
-];
-
-const MOCK_CAPTIONS = [
-  "今日随拍 #治愈系 城市的灯光总是让人安心",
-  "深夜食堂开张了 #美食 #夜宵 这碗面绝了！",
-  "带你看 3 秒钟的海 #旅行 #海边",
-  "代码写到凌晨的我 #程序员 #日常",
-  "猫主子今天心情不错 #萌宠 #猫咪",
-  "跑步第 100 天打卡 #运动 #自律",
-  "这首 BGM 无限循环 #音乐 #推荐",
-  "手冲咖啡入门 #咖啡 #生活方式",
-  "周末露营装备分享 #露营 #户外",
-  "新学的手势舞挑战一下 #跳舞 #挑战",
-];
-
-let state = { offset: 0, limit: 20, total: 0, q: "", loading: false, items: [], isMock: false, observers: new Map(), seed: Math.floor(Math.random() * 1e9) };
+let state = { offset: 0, limit: 20, total: 0, q: "", loading: false, items: [], observers: new Map(), seed: Math.floor(Math.random() * 1e9) };
 
 // 默认有声：浏览器只允许静音自动播，所以首次触碰屏幕时打开声音，之后所有视频都有声
 let soundOn = false;
@@ -192,7 +163,7 @@ const shuffleTxt = document.getElementById('shuffleTxt');
 function renderShuffleBtn(){
   const on = state.seed != null;
   shuffleBtn.classList.toggle('on', on);
-  shuffleTxt.textContent = on ? '🔀 随机开' : '🔀 顺序';
+  shuffleTxt.textContent = on ? '🔀 随机' : '🔀 顺序';
 }
 shuffleBtn.addEventListener('click', () => {
   state.seed = (state.seed == null) ? Math.floor(Math.random() * 1e9) : null;
@@ -218,40 +189,19 @@ function setStatus(ok, text) {
 function debounce(fn, ms){let t; return (...a)=>{clearTimeout(t); t=setTimeout(()=>fn(...a), ms)}}
 function extractTags(caption){ return caption.match(/#[^\s#]+/g) || []; }
 
-// 健康检查 + 真实请求 + mock 回退
 async function fetchList(offset, limit, q){
   try{
-    const url = API.list(offset, limit, q, state.seed);
-    const res = await fetch(url, {headers:{'Accept':'application/json'}});
+    const res = await fetch(API.list(offset, limit, q, state.seed), {headers:{'Accept':'application/json'}});
     if(!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
     if(!data || !Array.isArray(data.items)) throw new Error('bad format');
-    state.isMock = false;
-    setStatus(true, `已连接 ${WORKER_BASE || '同域'}`);
+    setStatus(true, '已连接');
     return data;
   }catch(e){
-    state.isMock = true;
-    setStatus(false, 'mock 演示（/api/list 未通，点击右上角设置地址）');
-    await new Promise(r=>setTimeout(r, 300));
-    const total = 4177;
-    const all = [];
-    for (let i = 0; i < total; i++) {
-      const id = 6515 + total - i;
-      const cap = MOCK_CAPTIONS[i % MOCK_CAPTIONS.length] + (q ? ` 搜:${q}` : '');
-      if(q && !cap.toLowerCase().includes(q.toLowerCase())) continue;
-      all.push({id, caption: cap});
-    }
-    if (state.seed != null) {
-      let s = state.seed >>> 0;
-      const rnd = () => { s |= 0; s = (s + 0x6d2b79f5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-      for (let i = all.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [all[i], all[j]] = [all[j], all[i]]; }
-    }
-    return {total: all.length, items: all.slice(offset, offset+limit)};
+    setStatus(false, '连不上');
+    throw e;
   }
 }
-
-function streamUrlFor(id){ return state.isMock ? DEMO_VIDEOS[id % DEMO_VIDEOS.length] : API.stream(id); }
-function thumbUrlFor(id){ return state.isMock ? `https://picsum.photos/seed/${id}/720/1280` : API.thumb(id); }
 
 function createSlide(item){
   const el = document.createElement('div');
@@ -262,8 +212,8 @@ function createSlide(item){
   const meta = `${item.duration ? '⏱'+item.duration+'s · ' : ''}${item.size ? (item.size/1048576).toFixed(1)+'MB' : ''}${item.date ? ' · '+String(item.date).slice(0,10) : ''}`;
   el.innerHTML = `
     <div class="video-wrap">
-      <img class="poster" src="${thumbUrlFor(item.id)}" alt="" loading="lazy" />
-      <video poster="${thumbUrlFor(item.id)}" src="${streamUrlFor(item.id)}" loop playsinline preload="metadata" muted></video>
+      <img class="poster" src="${API.thumb(item.id)}" alt="" loading="lazy" />
+      <video poster="${API.thumb(item.id)}" src="${API.stream(item.id)}" loop playsinline preload="metadata" muted></video>
       <div class="gradient"></div>
       <div class="gradient-top"></div>
     </div>
@@ -272,15 +222,16 @@ function createSlide(item){
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
       </div>
     </div>
+    <div class="slide-error">视频加载失败，轻点重试</div>
     <div class="play-indicator"><svg width="32" height="32" viewBox="0 0 24 24" fill="#fff"><path d="M8 5.14v14l11-7-11-7z"/></svg></div>
     <div class="heart-burst"><svg width="88" height="88" viewBox="0 0 24 24" fill="#fe2c55" stroke="#fe2c55" stroke-width="1.5"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div>
     <div class="actions">
-      <div class="action-btn"><div class="avatar"><img src="https://picsum.photos/seed/avatar${item.id}/100/100" alt=""><div class="follow-plus">+</div></div></div>
+      <div class="action-btn"><div class="avatar" style="display:flex;align-items:center;justify-content:center;background:#222;font-weight:700">橘<div class="follow-plus">+</div></div></div>
       <div class="action-btn like-btn" data-liked="0">
         <div class="action-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div>
-        <div class="action-label">${(Math.random()*20+1).toFixed(1)}w</div>
+        <div class="action-label">赞</div>
       </div>
-      <div class="action-btn"><div class="action-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div><div class="action-label">${Math.floor(Math.random()*9999)}</div></div>
+      <div class="action-btn"><div class="action-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div><div class="action-label">评论</div></div>
       <div class="action-btn share-btn"><div class="action-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></div><div class="action-label">分享</div></div>
     </div>
     <div class="info">
@@ -314,14 +265,18 @@ function createSlide(item){
     if(!video.duration) return;
     progressBar.style.width = ((video.currentTime / video.duration)*100)+'%';
   });
+  // 第一次播放时 worker 要先去 Telegram 换 file_id，偶尔超时：自动重试一次，再失败就让用户点一下重试
+  const errBox = el.querySelector('.slide-error');
+  function reloadVideo(){
+    errBox.classList.remove('show');
+    video.src = API.stream(item.id) + '?retry=' + Date.now();
+    if (video === currentVideo) video.play().catch(()=>{});
+  }
   video.addEventListener('error', ()=>{
-    // 真接口不通时自动降级到演示片，保证页面不黑屏
-    if (!video.dataset.fbk && state.isMock === false) {
-      video.dataset.fbk = '1';
-      video.src = DEMO_VIDEOS[item.id % DEMO_VIDEOS.length];
-      video.play().catch(()=>{});
-    }
+    if (!video.dataset.retried) { video.dataset.retried = '1'; setTimeout(reloadVideo, 1500); }
+    else errBox.classList.add('show');
   });
+  errBox.addEventListener('click', (e)=>{ e.stopPropagation(); reloadVideo(); });
   progressWrap.addEventListener('click', (e)=>{
     const rect = progressWrap.getBoundingClientRect();
     const pct = (e.clientX - rect.left)/rect.width;
@@ -344,7 +299,6 @@ function createSlide(item){
     if(likeBtn.dataset.liked !== '1'){
       likeBtn.dataset.liked='1'; likeBtn.classList.add('liked');
       const label = likeBtn.querySelector('.action-label');
-      label.textContent = (parseFloat(label.textContent)+0.1).toFixed(1)+'w';
     }
     heart.classList.remove('animate'); void heart.offsetWidth; heart.classList.add('animate');
   }
@@ -390,14 +344,19 @@ async function loadMore(reset=false){
       state.loading=false;
       return loadMore();
     }
-  }catch(e){ console.error(e); }
-  finally{ state.loading=false; hideStatus(); }
+    hideStatus();
+  }catch(e){
+    console.error(e);
+    showStatus('连不上视频服务，轻点重试', true);
+  }
+  finally{ state.loading=false; }
 }
 
-function showStatus(){
+function showStatus(text, retry){
   let s = document.getElementById('global-status');
   if(!s){ s=document.createElement('div'); s.id='global-status'; s.className='status'; feed.appendChild(s); }
-  s.innerHTML=`<div class="spinner"></div><div>加载中...</div>`;
+  s.innerHTML = retry ? `<div>${text}</div>` : `<div class="spinner"></div><div>加载中...</div>`;
+  s.onclick = retry ? ()=>loadMore(state.items.length === 0) : null;
 }
 function hideStatus(){ const s=document.getElementById('global-status'); if(s) s.remove(); }
 
@@ -444,7 +403,7 @@ function scrollToSlide(dir){
 (async function init(){
   try {
     const h = await fetch(API.health());
-    if (h.ok) setStatus(true, `已连接 ${WORKER_BASE || '同域'}`);
+    if (h.ok) setStatus(true, '已连接');
   } catch { /* fetchList 里会再判 */ }
   loadMore(true);
 })();
@@ -455,7 +414,6 @@ window.ShortsAPI = {
   getState: ()=> state,
 };
 
-setTimeout(()=>{ const h=document.getElementById('hint'); if(h){ h.style.opacity='.15'; h.addEventListener('mouseenter',()=>h.style.opacity='1'); h.addEventListener('mouseleave',()=>h.style.opacity='.15'); } }, 6000);
 </script>
 </body>
 </html>
