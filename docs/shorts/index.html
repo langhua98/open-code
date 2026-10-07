@@ -124,7 +124,7 @@ const savedBase = localStorage.getItem('worker_base') || '';
 if (qs.get('api')) {
   localStorage.setItem('worker_base', qs.get('api').replace(/\/$/, ''));
 }
-const WORKER_BASE = (qs.get('api') || savedBase || 'https://xiaoju-video.langhua98.workers.dev').replace(/\/$/, '');
+const WORKER_BASE = (qs.get('api') || savedBase || 'https://xiaoju-shorts.langhua98.workers.dev').replace(/\/$/, '');
 
 const API = {
   // 清单：GET /api/list?offset=0&limit=20&q=关键词 -> {total, items:[{id,caption,duration,size,date}]}

@@ -1,6 +1,6 @@
-# Cloudflare Worker 部署配置:和你现有 xiaoju-video 同名,直接覆盖升级
-# (worker.js 已保留 POST /tg-webhook,老机器人不受影响)
-name = "xiaoju-video"
+# Cloudflare Worker 部署配置:独立新 worker,不碰线上 xiaoju-video 机器人
+# (xiaoju-video 有 Durable Object + 机器人逻辑,覆盖会删库,故用新名字)
+name = "xiaoju-shorts"
 main = "worker.js"
 compatibility_date = "2026-10-01"
 
