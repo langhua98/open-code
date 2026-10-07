@@ -37,6 +37,12 @@
   .topbar{gap:8px}
   .slide-error{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:7;display:none;padding:10px 16px;border-radius:999px;background:rgba(0,0,0,.6);font-size:13px;color:#fff;cursor:pointer}
   .slide-error.show{display:block}
+  /* 清屏：左滑隐藏所有按钮和文字，右滑恢复 */
+  body.clean .topbar, body.clean .actions, body.clean .info, body.clean .gradient,
+  body.clean .gradient-top, body.clean .progress-wrap, body.clean #soundTip{opacity:0;pointer-events:none}
+  .topbar, .actions, .info, .gradient, .gradient-top, .progress-wrap{transition:opacity .25s}
+  #cleanToast{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:80;padding:8px 16px;border-radius:999px;background:rgba(0,0,0,.6);font-size:13px;color:#fff;opacity:0;pointer-events:none;transition:opacity .3s}
+  #cleanToast.show{opacity:1}
   .dot{width:6px;height:6px;border-radius:50%;background:#25f4ee;box-shadow:0 0 8px #25f4ee;animation:pulse 2s infinite}
   .api-badge.on{border-color:var(--accent2);color:#fff}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
@@ -104,6 +110,7 @@
 </div>
 
 <div class="feed" id="feed"></div>
+<div id="cleanToast"></div>
 
 <div id="soundTip">🔈 轻触屏幕开启声音</div>
 
@@ -363,6 +370,21 @@ function observeSlide(slide){
   io.observe(slide);
   state.observers.set(String(slide.dataset.id), io);
 }
+
+// 左滑清屏，右滑恢复（横向滑动才算，竖滑照常切视频）
+let swipeX = 0, swipeY = 0;
+feed.addEventListener('touchstart', (e)=>{ swipeX = e.touches[0].clientX; swipeY = e.touches[0].clientY; }, {passive:true});
+feed.addEventListener('touchend', (e)=>{
+  const dx = e.changedTouches[0].clientX - swipeX, dy = e.changedTouches[0].clientY - swipeY;
+  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  const clean = dx < 0;
+  if (document.body.classList.contains('clean') === clean) return;
+  document.body.classList.toggle('clean', clean);
+  const toast = document.getElementById('cleanToast');
+  toast.textContent = clean ? '已清屏，右滑恢复' : '已恢复';
+  toast.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(()=>toast.classList.remove('show'), 1200);
+}, {passive:true});
 
 qInput.addEventListener('input', debounce(()=>{ state.q = qInput.value.trim(); loadMore(true); }, 400));
 
