@@ -29,7 +29,14 @@
     }
   },
   "customizations": {
-    "codespaces": { "openFiles": ["README.md"] },
+    "codespaces": {
+      "openFiles": ["README.md"],
+      // The codespace's own GitHub token only covers this repository; also let it read and push
+      // the private video project. Codespaces asks you to approve this when it is created or rebuilt.
+      "repositories": {
+        "langhua98/xiaoju-video": { "permissions": { "contents": "write" } }
+      }
+    },
     "vscode": { "extensions": ["ms-python.python"] }
   }
 }
