@@ -40,6 +40,7 @@
 - **Docker**：`docker` 命令，需要重建过容器才有（先运行 `docker info` 确认）。
 - **文档和图表**：已经装好 Python 库 pypdf、python-docx、openpyxl、python-pptx、pandas、matplotlib。生成的文件放到 `outputs/`。
 - **技能**（`.opencode/skills/`）：`code-review` 审查改动，`security-review` 安全检查，`web-research` 上网调研，`documents` 处理 PDF、Word、Excel、PPT 和图表。遇到对应的任务时，先用 `skill` 工具加载。
+- **Superpowers 技能**（`opencode.json` 里的插件，锁定 v6.4.2）：`brainstorming` 先问清需求再动手，`writing-plans` / `executing-plans` 写计划、按计划做，`test-driven-development` 先写测试，`systematic-debugging` 系统排查 bug，`verification-before-completion` 做完先验证，等等。用 `skill` 工具列出和加载。
 
 ## 规则
 

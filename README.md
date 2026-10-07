@@ -141,7 +141,7 @@ kgpu quota                        # 本周 GPU 配额
 | `AGENTS.md` | 给 OpenCode 的项目规则：开发闭环、节省 GPU 配额、不泄露密钥 |
 | `.opencode/commands/gpu.md` | OpenCode 的 `/gpu` 命令 |
 | `.opencode/skills/` | OpenCode 的技能：代码审查、安全检查、上网调研、处理文档 |
-| `opencode.json` | OpenCode 项目配置：默认免费模型、隐藏 Copilot、接上浏览器工具 |
+| `opencode.json` | OpenCode 项目配置：默认免费模型、隐藏 Copilot、接上浏览器工具、装上 [Superpowers](https://github.com/obra/superpowers) 技能插件（v6.4.2） |
 | `tests/` | `kgpu` 的单元测试：`python3 -m unittest discover -s tests` |
 
 ## 额度与注意事项

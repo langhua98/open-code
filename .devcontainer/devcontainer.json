@@ -16,7 +16,9 @@
     "4096": { "label": "OpenCode Web", "onAutoForward": "notify" }
   },
   "remoteEnv": {
-    "PATH": "${containerWorkspaceFolder}/tools:${containerEnv:PATH}"
+    "PATH": "${containerWorkspaceFolder}/tools:${containerEnv:PATH}",
+    // Superpowers: don't load its logo from the author's site (version ping) in the brainstorming visual companion.
+    "SUPERPOWERS_DISABLE_TELEMETRY": "1"
   },
   // Codespaces asks for these when creating a codespace and injects them as environment variables.
   "secrets": {
