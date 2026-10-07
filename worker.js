@@ -4,6 +4,7 @@
 //   CHANNEL_ID  - -1004292843233
 //   INDEX_URL   - export_index.py 生成的 index.json 的公网地址 (R2 / GitHub Pages)
 //   LOG_CHAT_ID - 可选,用来按需 forward 换 file_id (先填频道 ID 本身也行,建议建个私有仓)
+//   FILE_IDS    - 可选 KV 绑定 (见 wrangler.toml):换到的 file_id 永久存下来,每个视频只 forward 一次
 // 保留了你原来的 POST /tg-webhook,不破坏现有机器人
 
 const JSON_HDR = { "content-type": "application/json; charset=utf-8" };
@@ -16,6 +17,19 @@ const cors = {
 
 let INDEX_CACHE = null;
 let INDEX_TS = 0;
+
+// Bot API 只能下载 20 MB 以内的文件,更大的视频放不了
+const MAX_BOT_FILE = 20 * 1024 * 1024;
+// file_id 永久有效;file_path 官方保证至少 1 小时有效
+const PATH_TTL = 50 * 60 * 1000;
+const META = new Map(); // 消息 id -> {file_id, thumb_id}
+const PATHS = new Map(); // file_id -> {path, ts}
+const PENDING = new Map(); // 同一视频的并发请求 (播放时浏览器会分段要数据) 只问一次 TG
+
+function once(key, fn) {
+  if (!PENDING.has(key)) PENDING.set(key, fn().finally(() => PENDING.delete(key)));
+  return PENDING.get(key);
+}
 
 async function tg(env, method, params = {}) {
   const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
@@ -39,21 +53,51 @@ async function loadIndex(env) {
 
 // 按需换 file_id:把频道某条消息 forward 到 LOG_CHAT_ID,拿回 file_id
 // 需要 bot 在 LOG_CHAT_ID 里也是管理员 (建个只有你和 bot 的私有频道最省事)
+// 换到的 file_id 先存内存,有 FILE_IDS 绑定时再存 KV,之后不再 forward
 async function resolveFileId(env, msgId, index) {
-  const hit = (index || []).find((x) => String(x.id) === String(msgId));
+  const id = String(msgId);
+  const hit = (index || []).find((x) => String(x.id) === id);
   if (hit && hit.file_id) return hit;
+  const base = hit || { id: Number(id) };
+  if (META.has(id)) return { ...base, ...META.get(id) };
+  if (env.FILE_IDS) {
+    const saved = await env.FILE_IDS.get(id, "json");
+    if (saved) {
+      META.set(id, saved);
+      return { ...base, ...saved };
+    }
+  }
   if (!env.LOG_CHAT_ID) return hit || null;
-  const fwd = await tg(env, "forwardMessage", {
-    chat_id: env.LOG_CHAT_ID,
-    from_chat_id: env.CHANNEL_ID,
-    message_id: Number(msgId),
+  const ids = await once(`fwd:${id}`, async () => {
+    const fwd = await tg(env, "forwardMessage", {
+      chat_id: env.LOG_CHAT_ID,
+      from_chat_id: env.CHANNEL_ID,
+      message_id: Number(id),
+    });
+    const m = fwd && fwd.result ? fwd.result : null;
+    const fileId =
+      m?.video?.file_id || m?.document?.file_id || m?.animation?.file_id || null;
+    if (!fileId) return null;
+    const thumbId = m?.video?.thumbnail?.file_id || m?.thumb?.file_id || null;
+    const found = { file_id: fileId, thumb_id: thumbId };
+    META.set(id, found);
+    if (env.FILE_IDS) await env.FILE_IDS.put(id, JSON.stringify(found));
+    return found;
   });
-  const m = fwd && fwd.result ? fwd.result : null;
-  const fileId =
-    m?.video?.file_id || m?.document?.file_id || m?.animation?.file_id || null;
-  const thumbId = m?.video?.thumbnail?.file_id || m?.thumb?.file_id || null;
-  if (!fileId) return hit || null;
-  return { ...(hit || { id: Number(msgId) }), file_id: fileId, thumb_id: thumbId };
+  return ids ? { ...base, ...ids } : hit || null;
+}
+
+// file_id -> 下载路径,缓存 50 分钟,不用每段数据都问一次 getFile
+async function filePath(env, fileId) {
+  const c = PATHS.get(fileId);
+  if (c && Date.now() - c.ts < PATH_TTL) return { path: c.path };
+  return once(`path:${fileId}`, async () => {
+    const g = await tg(env, "getFile", { file_id: fileId });
+    const path = g?.result?.file_path;
+    if (!path) return { error: g?.description || "getFile 失败" };
+    PATHS.set(fileId, { path, ts: Date.now() });
+    return { path };
+  });
 }
 
 function proxyResp(upstream, extra = {}) {
@@ -88,7 +132,8 @@ export default {
       const q = (u.searchParams.get("q") || "").trim().toLowerCase();
       const offset = Math.max(0, Number(u.searchParams.get("offset") || 0));
       const limit = Math.min(100, Math.max(1, Number(u.searchParams.get("limit") || 20)));
-      let arr = index.slice();
+      // 超过 20 MB 的视频机器人下载不了,不放进列表
+      let arr = index.filter((x) => !(x.size > MAX_BOT_FILE));
       if (q) arr = arr.filter((x) => (x.caption || "").toLowerCase().includes(q));
       if (u.searchParams.get("shuffle") === "1") {
         let s = Number(u.searchParams.get("seed") || Date.now()) >>> 0;
@@ -120,11 +165,12 @@ export default {
     let m = u.pathname.match(/^\/stream\/(\d+)/) || (u.pathname === "/stream" ? [null, u.searchParams.get("id")] : null);
     if (m && m[1]) {
       const index = await loadIndex(env);
+      const hit = index.find((x) => String(x.id) === String(m[1]));
+      if (hit && hit.size > MAX_BOT_FILE) return new Response("视频超过 20 MB,机器人接口下载不了", { status: 413, headers: cors });
       const meta = await resolveFileId(env, m[1], index);
       if (!meta || !meta.file_id) return new Response("no file_id,先跑 export 更新 index.json", { status: 404, headers: cors });
-      const g = await tg(env, "getFile", { file_id: meta.file_id });
-      const path = g?.result?.file_path;
-      if (!path) return new Response("getFile 失败", { status: 502, headers: cors });
+      const { path, error } = await filePath(env, meta.file_id);
+      if (!path) return new Response(error, { status: 502, headers: cors });
       const fileUrl = `https://api.telegram.org/file/bot${env.BOT_TOKEN}/${path}`;
       const headers = {};
       const range = req.headers.get("range");
@@ -140,9 +186,8 @@ export default {
       const meta = await resolveFileId(env, m[1], index);
       const fid = meta?.thumb_id || meta?.file_id;
       if (!fid) return new Response("no thumb", { status: 404, headers: cors });
-      const g = await tg(env, "getFile", { file_id: fid });
-      const path = g?.result?.file_path;
-      if (!path) return new Response("getFile 失败", { status: 502, headers: cors });
+      const { path, error } = await filePath(env, fid);
+      if (!path) return new Response(error, { status: 502, headers: cors });
       const up = await fetch(`https://api.telegram.org/file/bot${env.BOT_TOKEN}/${path}`);
       return proxyResp(up, { "cache-control": "public, max-age=86400" });
     }

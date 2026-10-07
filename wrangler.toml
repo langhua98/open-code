@@ -9,3 +9,10 @@ compatibility_date = "2026-10-01"
 #   wrangler secret put CHANNEL_ID      # -1004292843233
 #   wrangler secret put INDEX_URL       # index.json 公网地址
 #   wrangler secret put LOG_CHAT_ID     # 私有仓 id,按需换 file_id 用
+
+# 可选:把换到的 file_id 永久存进 KV,每个视频只 forward 一次 (worker.js 里的 FILE_IDS)
+#   1. npx wrangler kv namespace create FILE_IDS   # 会打印一个 id
+#   2. 去掉下面三行的 #,把 id 换成上一步打印的值,再 npx wrangler deploy
+# [[kv_namespaces]]
+# binding = "FILE_IDS"
+# id = "<上一步打印的 id>"
