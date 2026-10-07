@@ -1,0 +1,11 @@
+# Cloudflare Worker 部署配置:和你现有 xiaoju-video 同名,直接覆盖升级
+# (worker.js 已保留 POST /tg-webhook,老机器人不受影响)
+name = "xiaoju-video"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+# 正式变量用 secret 存,不要写在这里:
+#   wrangler secret put BOT_TOKEN
+#   wrangler secret put CHANNEL_ID      # -1004292843233
+#   wrangler secret put INDEX_URL       # index.json 公网地址
+#   wrangler secret put LOG_CHAT_ID     # 私有仓 id,按需换 file_id 用
