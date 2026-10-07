@@ -2,7 +2,7 @@
   "name": "open-code",
   "short_name": "open-code",
   "start_url": "./",
-  "display": "standalone",
+  "display": "browser",
   "background_color": "#0b0d10",
   "theme_color": "#0b0d10",
   "icons": [{ "src": "icon.png", "sizes": "512x512", "type": "image/png" }]
