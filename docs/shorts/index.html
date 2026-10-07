@@ -40,7 +40,7 @@
   .feed::-webkit-scrollbar{display:none}
   .slide{position:relative;height:100vh;height:100dvh;width:100vw;scroll-snap-align:start;scroll-snap-stop:always;background:#000;overflow:hidden}
   .video-wrap{position:absolute;inset:0}
-  .video-wrap video,.poster{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+  .video-wrap video,.poster{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:transparent}
   .poster{transition:opacity .4s}
   .shade-top{position:absolute;top:0;left:0;right:0;height:110px;background:linear-gradient(180deg,rgba(0,0,0,.45),transparent);pointer-events:none}
   .shade-bottom{position:absolute;left:0;right:0;bottom:0;height:45%;background:linear-gradient(0deg,rgba(0,0,0,.7),transparent);pointer-events:none}
@@ -158,7 +158,7 @@ const feed = document.getElementById('feed');
 const qInput = document.getElementById('qInput');
 
 // ── 声音：浏览器只让静音自动播，第一次碰屏幕时打开声音，之后都有声 ──
-let soundOn = false;
+let soundOn = false, soundJustOn = 0;
 const ICON = {
   sound: `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><path d="M11 5 6 9H2v6h4l5 4V5z" fill="#fff"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>`,
   muted: `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><path d="M11 5 6 9H2v6h4l5 4V5z" fill="#fff"/><path d="m22 9-6 6M16 9l6 6"/></svg>`,
@@ -174,7 +174,14 @@ function setMute(btn, muted) {
 function enableSound() {
   if (soundOn) return;
   soundOn = true;
-  document.querySelectorAll('.slide video').forEach(v => { v.muted = false; });
+  soundJustOn = Date.now();  // 这一下只是开声音，不当成「点一下暂停」
+  // 苹果手机只让「被手指碰过时 play 过」的播放器带声音自动播：趁这一下把池子里的三个都解锁
+  // 解锁看的是「碰屏幕时调了 play」，跟当时静不静音无关：不在眼前的先静音着解锁，免得冒出一声
+  POOL.forEach(v => {
+    v.muted = v !== currentVideo;
+    const p = v.play();
+    if (p) p.then(() => { if (v !== currentVideo) v.pause(); }).catch(() => {});
+  });
   document.querySelectorAll('.slide .mute-btn').forEach(b => setMute(b, false));
   document.getElementById('soundTip').style.display = 'none';
 }
@@ -278,7 +285,6 @@ function createSlide(item) {
   el.innerHTML = `
     <div class="video-wrap">
       <img class="poster" src="${API.thumb(item.id)}" alt="" loading="lazy" />
-      <video poster="${API.thumb(item.id)}" src="${API.stream(item.id)}" loop playsinline preload="metadata" muted></video>
       <div class="shade-top"></div><div class="shade-bottom"></div>
     </div>
     <div class="slide-error">视频加载失败，轻点重试</div>
@@ -303,12 +309,12 @@ function createSlide(item) {
   `;
 
   const $ = s => el.querySelector(s);
-  const video = $('video'), poster = $('.poster'), bar = $('.progress-bar'), wrap = $('.progress-wrap');
+  const poster = $('.poster'), bar = $('.progress-bar'), wrap = $('.progress-wrap');
+  const vid = () => el._video;  // 这一页现在借着的播放器（不在眼前的页没有）
   const playInd = $('.play-indicator'), heart = $('.heart-burst'), timeTip = $('.time-tip');
   const likeBtn = $('.like-btn'), favBtn = $('.fav-btn'), muteBtn = $('.mute-btn'), caption = $('.caption'), more = $('.more');
 
-  video.muted = !soundOn;
-  setMute(muteBtn, video.muted);
+  setMute(muteBtn, !soundOn);
 
   // 文案超过两行才出「展开」
   requestAnimationFrame(() => { if (caption.scrollHeight > caption.clientHeight + 2) more.style.display = ''; });
@@ -322,30 +328,35 @@ function createSlide(item) {
   $('.author').onclick = e => { e.stopPropagation(); if (item.author) search(item.author); };
   $('.author-btn').onclick = e => { e.stopPropagation(); if (item.author) search(item.author); else toast('这条视频没有作者信息'); };
 
-  video.addEventListener('playing', () => { poster.style.opacity = '0'; });
-  video.addEventListener('timeupdate', () => { if (video.duration) bar.style.width = (video.currentTime / video.duration * 100) + '%'; });
+  el._on = {
+    playing: () => { poster.style.opacity = '0'; },
+    timeupdate: v => { if (v.duration) bar.style.width = (v.currentTime / v.duration * 100) + '%'; },
+  };
 
   // 第一次播放时视频服务要先去 Telegram 换文件号，偶尔超时或被限流：自动重试三次，再不行让人点一下
   const errBox = $('.slide-error');
   function reloadVideo() {
     errBox.classList.remove('show');
-    video.src = API.stream(item.id) + '?retry=' + Date.now();
-    if (video === currentVideo) video.play().catch(() => {});
+    const v = vid();
+    if (!v) return;
+    v.src = API.stream(item.id) + '?retry=' + Date.now();
+    if (v === currentVideo) v.play().catch(() => {});
   }
-  video.addEventListener('error', () => {
-    const n = Number(video.dataset.retried || 0);
-    if (n < 3) { video.dataset.retried = String(n + 1); setTimeout(reloadVideo, [2000, 8000, 20000][n]); }
+  el._on.error = v => {
+    const n = Number(el.dataset.retried || 0);
+    if (n < 3) { el.dataset.retried = String(n + 1); setTimeout(() => { if (vid() === v) reloadVideo(); }, [2000, 8000, 20000][n]); }
     else errBox.classList.add('show');
-  });
+  };
   errBox.addEventListener('click', e => { e.stopPropagation(); reloadVideo(); });
 
   // 进度条：点或拖，拖的时候中间显示时间
   function seekTo(clientX) {
     const r = wrap.getBoundingClientRect();
     const p = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
-    if (!video.duration) return;
-    video.currentTime = p * video.duration;
-    timeTip.textContent = `${fmtTime(video.currentTime)} / ${fmtTime(video.duration)}`;
+    const v = vid();
+    if (!v || !v.duration) return;
+    v.currentTime = p * v.duration;
+    timeTip.textContent = `${fmtTime(v.currentTime)} / ${fmtTime(v.duration)}`;
   }
   wrap.addEventListener('pointerdown', e => { e.stopPropagation(); timeTip.classList.add('show'); seekTo(e.clientX); wrap.setPointerCapture(e.pointerId); });
   wrap.addEventListener('pointermove', e => { if (wrap.hasPointerCapture(e.pointerId)) seekTo(e.clientX); });
@@ -356,6 +367,7 @@ function createSlide(item) {
   let lastTap = 0, tapTimer = null;
   el.addEventListener('click', e => {
     if (e.target.closest('.actions,.info,.progress-wrap')) return;
+    if (Date.now() - soundJustOn < 800) return;
     const now = Date.now();
     if (now - lastTap < 280) {
       clearTimeout(tapTimer);
@@ -366,8 +378,10 @@ function createSlide(item) {
     lastTap = now;
   });
   function togglePlay() {
-    if (video.paused) { video.play().catch(() => {}); playInd.classList.remove('show'); }
-    else { video.pause(); playInd.classList.add('show'); }
+    const v = vid();
+    if (!v) return;
+    if (v.paused) { v.play().catch(() => {}); playInd.classList.remove('show'); }
+    else { v.pause(); playInd.classList.add('show'); }
   }
   function like(only, x, y) {
     const on = only ? true : !liked.has(id);
@@ -400,9 +414,12 @@ function createSlide(item) {
   };
   muteBtn.onclick = e => {
     e.stopPropagation();
-    video.muted = !video.muted;
-    if (!video.muted) soundOn = true;
-    setMute(muteBtn, video.muted);
+    const v = vid();
+    const muted = v ? !v.muted : soundOn;
+    if (v) v.muted = muted;
+    if (!muted) enableSound(); else soundOn = false;
+    POOL.forEach(x => { x.muted = muted; });
+    document.querySelectorAll('.slide .mute-btn').forEach(b => setMute(b, muted));
   };
   return el;
 }
@@ -413,6 +430,7 @@ async function loadMore(reset = false) {
   if (reset) {
     state.offset = 0; state.items = [];
     observers.forEach(o => o.disconnect()); observers.clear();
+    POOL.forEach(v => { v.pause(); v._slide = null; v.removeAttribute('src'); v.load(); });
     feed.innerHTML = ''; feed.scrollTop = 0; currentVideo = null;
   }
   state.loading = true;
@@ -443,21 +461,54 @@ function showStatus(text, final) {
 }
 function hideStatus() { const s = document.getElementById('global-status'); if (s) s.remove(); }
 
+// 播放器池：只有三个 <video>，眼前这页和后面两页轮着用（第 i 页用第 i % 3 个）。
+// 苹果手机上播放器要被手指「解锁」过才能带声音自动播，每页一个新播放器的话第二页就得再点一下
 let currentVideo = null;
+const POOL = [0, 1, 2].map(() => {
+  const v = document.createElement('video');
+  v.loop = true;
+  v.playsInline = true;
+  v.setAttribute('playsinline', '');
+  v.setAttribute('webkit-playsinline', '');
+  v.muted = true;
+  v.preload = 'auto';
+  ['playing', 'timeupdate', 'error'].forEach(ev => v.addEventListener(ev, () => {
+    const s = v._slide;
+    if (s && s._on && s._on[ev]) s._on[ev](v);
+  }));
+  return v;
+});
+function lend(slide) {
+  if (!slide || !slide.classList.contains('slide')) return null;
+  const v = POOL[Number(slide.dataset.index) % POOL.length];
+  if (v._slide !== slide) {
+    if (v._slide) { v.pause(); v._slide._video = null; v._slide.querySelector('.poster').style.opacity = '1'; }
+    v._slide = slide;
+    slide._video = v;
+    slide.dataset.retried = '0';
+    slide.querySelector('.video-wrap').insertBefore(v, slide.querySelector('.shade-top'));
+    v.poster = API.thumb(slide.dataset.id);
+    v.src = API.stream(slide.dataset.id);
+  }
+  return v;
+}
 function observe(slide) {
-  const video = slide.querySelector('video');
   const io = new IntersectionObserver(entries => entries.forEach(entry => {
     if (entry.isIntersecting && entry.intersectionRatio > 0.7) {
+      const idx = Number(slide.dataset.index);
+      const video = lend(slide);
+      lend(feed.children[idx + 1]);  // 后面两页先借好、先缓冲
+      lend(feed.children[idx + 2]);
       if (currentVideo && currentVideo !== video) currentVideo.pause();
       currentVideo = video;
-      if (soundOn) video.muted = false;
-      video.play().catch(() => {});
+      video.muted = !soundOn;
+      setMute(slide.querySelector('.mute-btn'), video.muted);
+      // 万一还是被拦（没解锁过），先静音播着，别停在那儿等人点
+      video.play().catch(() => { video.muted = true; setMute(slide.querySelector('.mute-btn'), true); video.play().catch(() => {}); });
       slide.querySelector('.play-indicator').classList.remove('show');
-      const idx = Number(slide.dataset.index);
-      for (let i = 1; i <= 2; i++) { const n = feed.children[idx + i]; const v = n && n.querySelector('video'); if (v) v.preload = 'auto'; }
       if (idx >= state.items.length - 4 && state.items.length < state.total) loadMore();
-    } else if (entry.intersectionRatio < 0.2) {
-      video.pause();
+    } else if (entry.intersectionRatio < 0.2 && slide._video) {
+      slide._video.pause();
     }
   }), { threshold: [0, 0.2, 0.7, 1] });
   io.observe(slide);
@@ -485,7 +536,7 @@ document.addEventListener('keydown', e => {
     const next = slides[Math.max(0, Math.min(slides.length - 1, cur + (e.key === 'ArrowDown' ? 1 : -1)))];
     if (next) next.scrollIntoView({ behavior: 'smooth' });
   }
-  if (e.key === ' ' && currentVideo) { e.preventDefault(); currentVideo.paused ? currentVideo.play() : currentVideo.pause(); }
+  if (e.key === ' ' && currentVideo) { e.preventDefault(); if (currentVideo.paused) currentVideo.play().catch(() => {}); else currentVideo.pause(); }
 });
 
 (async function init() {
