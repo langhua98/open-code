@@ -98,6 +98,7 @@ kgpu quota                        # 本周 GPU 配额
 | 路径 | 作用 |
 | --- | --- |
 | `.devcontainer/` | Codespaces 配置：Python 3.12 + Node，自动安装 OpenCode 和 Kaggle CLI，每次连上后启动 Web 界面 |
+| `docs/` | 手机入口页（GitHub Pages）：<https://langhua98.github.io/open-code/>，一点唤醒 Codespace、打开 OpenCode |
 | `tools/web` | 启动 OpenCode 网页版（终端里输入 `web`，重启用 `web restart`），并显示手机上要打开的网址 |
 | `tools/kgpu` | Kaggle GPU 运行器 |
 | `kgpu.toml` | Kaggle 运行配置：默认命令、GPU 型号、联网、超时、数据集和模型挂载 |

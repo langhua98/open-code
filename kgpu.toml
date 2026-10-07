@@ -28,7 +28,7 @@ env = {}
 
 [files]
 # The repo is packed from git (tracked + new files, .gitignore respected), minus these globs.
-exclude = ["runs/**", "outputs/**", ".devcontainer/**", ".opencode/**", ".github/**"]
+exclude = ["runs/**", "outputs/**", "docs/**", ".devcontainer/**", ".opencode/**", ".github/**"]
 # Bigger files are skipped. Put datasets and weights in a Kaggle dataset or model instead.
 max_file_mb = 5
 max_payload_mb = 20

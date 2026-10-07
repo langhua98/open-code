@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>open-code</title>
+<meta name="description" content="手机上打开 Codespace 和 OpenCode 的入口">
+<meta name="theme-color" content="#0b0d10">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="open-code">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #15171a; --muted: #5d6470; --line: #e3e6ea;
+    --accent: #16a34a; --accent-text: #ffffff; --soft: #eef0f3; --code: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0d10; --card: #15181d; --text: #eceef1; --muted: #9aa3ae; --line: #262b33;
+      --accent: #22c55e; --accent-text: #05210f; --soft: #1d2229; --code: #1d2229;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    padding: max(20px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom));
+  }
+  main { max-width: 520px; margin: 0 auto; display: grid; gap: 14px; }
+  header { display: flex; align-items: center; gap: 12px; padding: 4px 2px 6px; }
+  header img { width: 44px; height: 44px; border-radius: 11px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: .2px; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+  .step { display: flex; gap: 12px; align-items: flex-start; }
+  .num {
+    flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--soft);
+    display: grid; place-items: center; font-weight: 600; font-size: 14px; margin-top: 2px;
+  }
+  .step h2 { font-size: 17px; margin: 0 0 4px; }
+  .step p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+  a.btn {
+    display: block; text-align: center; text-decoration: none; font-weight: 600; font-size: 17px;
+    padding: 14px; border-radius: 12px; background: var(--accent); color: var(--accent-text);
+  }
+  a.btn.secondary { background: var(--soft); color: var(--text); }
+  .copy {
+    display: flex; align-items: center; gap: 10px; background: var(--code); border-radius: 10px;
+    padding: 10px 12px; margin-top: 8px;
+  }
+  .copy code { flex: 1; font: 15px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+  .copy button {
+    flex: none; border: 1px solid var(--line); background: var(--card); color: var(--text);
+    border-radius: 8px; padding: 6px 12px; font-size: 14px;
+  }
+  .links { display: grid; gap: 8px; }
+  .links a { color: var(--text); text-decoration: none; display: flex; justify-content: space-between; padding: 6px 2px; }
+  .links a span { color: var(--muted); }
+  details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  details label { display: block; font-size: 14px; color: var(--muted); margin: 12px 0 6px; }
+  details input {
+    width: 100%; font: 15px ui-monospace, Menlo, monospace; padding: 10px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--code); color: var(--text);
+  }
+  details .row { display: flex; gap: 8px; margin-top: 10px; }
+  details .row button {
+    flex: 1; border: 0; border-radius: 10px; padding: 10px; font-size: 15px;
+    background: var(--soft); color: var(--text);
+  }
+  .note { color: var(--muted); font-size: 13px; text-align: center; margin: 4px 0 0; }
+  .toast {
+    position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 999px; font-size: 14px;
+    opacity: 0; transition: opacity .2s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="icon.png" alt="">
+    <div>
+      <h1>open-code</h1>
+      <p>手机 · Codespaces · OpenCode · Kaggle GPU</p>
+    </div>
+  </header>
+
+  <section class="card step">
+    <div class="num">1</div>
+    <div style="flex:1">
+      <h2>唤醒 Codespace</h2>
+      <p>Codespace 停了也没关系，点下面会自动启动，大约等 1 分钟。</p>
+      <a class="btn secondary" id="open-codespace" href="#">打开 Codespace</a>
+    </div>
+  </section>
+
+  <section class="card step">
+    <div class="num">2</div>
+    <div style="flex:1">
+      <h2>打开 OpenCode</h2>
+      <p>Codespace 连上以后再点这里。</p>
+      <a class="btn" id="open-opencode" href="#">打开 OpenCode</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 style="font-size:17px;margin:0 0 4px">OpenCode 页面空白？</h2>
+    <p style="margin:0;color:var(--muted);font-size:14px">在 Codespace 的终端里输入下面这个命令，回车，然后刷新 OpenCode 页面。</p>
+    <div class="copy"><code>web</code><button data-copy="web">复制</button></div>
+    <p style="margin:12px 0 0;color:var(--muted);font-size:14px">新建会话时，项目选这个文件夹：</p>
+    <div class="copy"><code>/workspaces/open-code</code><button data-copy="/workspaces/open-code">复制</button></div>
+  </section>
+
+  <section class="card links">
+    <a id="link-codespaces" href="https://github.com/codespaces">我的 Codespaces <span>停止 / 删除 ›</span></a>
+    <a href="https://github.com/langhua98/open-code">代码仓库 <span>GitHub ›</span></a>
+    <a href="https://www.kaggle.com/code/xiaojuai/open-code-gpu">GPU 运行记录 <span>Kaggle ›</span></a>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>设置：换了新的 Codespace？</summary>
+      <label for="name">Codespace 名字（地址里 .github.dev 前面那一串）</label>
+      <input id="name" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div class="row">
+        <button id="save">保存</button>
+        <button id="reset">恢复默认</button>
+      </div>
+    </details>
+  </section>
+
+  <p class="note">提示：用浏览器的「添加到主屏幕」，以后一点就能打开这个入口。</p>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+  const DEFAULT_NAME = "automatic-space-waffle-97pwpp66wq6cp74v";
+  const KEY = "open-code.codespace";
+
+  function read() {
+    try { return localStorage.getItem(KEY) || DEFAULT_NAME; } catch { return DEFAULT_NAME; }
+  }
+
+  function write(value) {
+    try { value ? localStorage.setItem(KEY, value) : localStorage.removeItem(KEY); } catch {}
+  }
+
+  function apply() {
+    const name = read();
+    document.getElementById("open-codespace").href = `https://${name}.github.dev/`;
+    document.getElementById("open-opencode").href = `https://${name}-4096.app.github.dev/`;
+    document.getElementById("name").value = name;
+  }
+
+  // Accept either the bare name or a pasted address such as https://NAME.github.dev/ or https://NAME-4096.app.github.dev/
+  function clean(value) {
+    return value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/(-4096)?\.app\.github\.dev$|\.github\.dev$/, "");
+  }
+
+  function toast(text) {
+    const el = document.getElementById("toast");
+    el.textContent = text;
+    el.classList.add("show");
+    setTimeout(() => el.classList.remove("show"), 1500);
+  }
+
+  document.getElementById("save").addEventListener("click", () => {
+    const name = clean(document.getElementById("name").value);
+    if (!name) return toast("名字不能为空");
+    write(name);
+    apply();
+    toast("已保存");
+  });
+
+  document.getElementById("reset").addEventListener("click", () => {
+    write("");
+    apply();
+    toast("已恢复默认");
+  });
+
+  document.querySelectorAll("[data-copy]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const text = button.dataset.copy;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const area = document.createElement("textarea");
+        area.value = text;
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand("copy");
+        area.remove();
+      }
+      toast("已复制");
+    });
+  });
+
+  apply();
+</script>
+</body>
+</html>

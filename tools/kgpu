@@ -67,7 +67,7 @@ DEFAULTS: dict[str, dict] = {
         "env": {},
     },
     "files": {
-        "exclude": ["runs/**", "outputs/**", ".devcontainer/**", ".opencode/**", ".github/**"],
+        "exclude": ["runs/**", "outputs/**", "docs/**", ".devcontainer/**", ".opencode/**", ".github/**"],
         "max_file_mb": 5,
         "max_payload_mb": 20,
     },
