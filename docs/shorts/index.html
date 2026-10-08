@@ -4,7 +4,13 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <meta name="theme-color" content="#000000" />
-<title>小橘视频</title>
+<title>小橘抖音</title>
+<meta name="apple-mobile-web-app-title" content="小橘抖音" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+<link rel="manifest" href="manifest.webmanifest" />
 <style>
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   :root{--accent:#fe2c55;--accent2:#25f4ee;--dim:rgba(255,255,255,.65)}
@@ -278,7 +284,7 @@ function createSlide(item) {
   const el = document.createElement('div');
   el.className = 'slide';
   el.dataset.id = item.id;
-  const author = item.author || '小橘视频';
+  const author = item.author || '小橘抖音';
   el.classList.add('no-related');
   const meta = [item.duration ? fmtTime(item.duration) : '', item.date ? String(item.date).slice(0, 10) : ''].filter(Boolean).join(' · ');
   const id = String(item.id);
@@ -409,7 +415,7 @@ function createSlide(item) {
   $('.share-btn').onclick = e => {
     e.stopPropagation();
     const url = `${location.origin}${location.pathname}?v=${item.id}`;
-    if (navigator.share) navigator.share({ title: item.caption ? String(item.caption).slice(0, 40) : '小橘视频', url }).catch(() => {});
+    if (navigator.share) navigator.share({ title: item.caption ? String(item.caption).slice(0, 40) : '小橘抖音', url }).catch(() => {});
     else if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => toast('链接已复制'));
   };
   muteBtn.onclick = e => {
