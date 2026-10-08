@@ -11,6 +11,18 @@
       "timeout": 20000
     }
   },
+  "permission": {
+    "playwright_*": "deny"
+  },
+  "agent": {
+    "browser": {
+      "description": "Uses the Playwright browser to open and operate web pages: clicking, filling forms, logging in, pages that need JavaScript, screenshots. Use it for any step that needs a real browser; for just reading an article or docs page, use webfetch instead.",
+      "mode": "all",
+      "permission": {
+        "playwright_*": "allow"
+      }
+    }
+  },
   "watcher": {
     "ignore": ["runs/**", "outputs/**", ".playwright-mcp/**"]
   }

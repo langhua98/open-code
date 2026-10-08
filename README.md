@@ -76,6 +76,7 @@ Token 只存在 Codespaces secrets 里，**不要写进仓库里的任何文件*
 | 文档处理库 | 读写 PDF、Word、Excel、PPT，画图表 | 「把这个 Excel 画成折线图」 |
 | 技能 | 代码审查、安全检查、上网调研、处理文档 | 「审查一下我的改动」「做个安全检查」 |
 
+- 浏览器工具默认不加载，这样每次请求能少发约 2 万字节的工具说明，更省 token。要用浏览器时照常说「用浏览器……」，OpenCode 会把这一步交给 `browser` 子代理。在终端界面（TUI）里按 Tab 也可以直接切换到 browser 代理。
 - 浏览器截图保存在 `.playwright-mcp/`，生成的文档放在 `outputs/`，这两个目录都不会提交到 git。
 - 推送代码、开 PR 之前，OpenCode 会先问你。
 - 免费模型用这些工具的本事一般（DeepSeek 好一些）：简单的事情可以，步骤很多的网页操作容易出错。
@@ -147,7 +148,7 @@ kgpu quota                        # 本周 GPU 配额
 | `AGENTS.md` | 给 OpenCode 的项目规则：开发闭环、节省 GPU 配额、不泄露密钥 |
 | `.opencode/commands/gpu.md` | OpenCode 的 `/gpu` 命令 |
 | `.opencode/skills/` | OpenCode 的技能：代码审查、安全检查、上网调研、处理文档 |
-| `opencode.json` | OpenCode 项目配置：默认 DeepSeek 模型、隐藏 Copilot、接上浏览器工具、装上 [Superpowers](https://github.com/obra/superpowers) 技能插件（v6.4.2） |
+| `opencode.json` | OpenCode 项目配置：默认 DeepSeek 模型、隐藏 Copilot、接上浏览器工具（默认不加载，交给 `browser` 代理用）、装上 [Superpowers](https://github.com/obra/superpowers) 技能插件（v6.4.2） |
 | `tests/` | `kgpu` 的单元测试：`python3 -m unittest discover -s tests` |
 
 ## 额度与注意事项
