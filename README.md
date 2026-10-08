@@ -27,11 +27,15 @@ runs/<编号>/：日志、结果、输出文件 ──────────�
 1. 账号需要完成**手机号验证**，否则不能用 GPU，也不能联网（Settings → Phone verification）。
 2. 打开 <https://www.kaggle.com/settings/api>，在 **API** 一栏点击 **Generate New Token**，复制生成的 token（以 `KGAT_` 开头）。
 
-### 2. 创建 Codespace，同时填入 token
+### 2. DeepSeek
 
-打开 <https://codespaces.new/langhua98/open-code>。页面上有一栏 **KAGGLE_API_TOKEN**，把 token 粘贴进去，然后点击 **Create codespace**。GitHub 会把它保存成你的 Codespaces secret，以后新建的 Codespace 都会自动带上。
+OpenCode 默认用 DeepSeek 官方 API。打开 <https://platform.deepseek.com/api_keys> 创建一个 API key（以 `sk-` 开头），复制下来。账户里要有余额。
 
-另一种方式是先在 <https://github.com/settings/codespaces> 里点 **New secret** 手动添加：Name 填 `KAGGLE_API_TOKEN`，Repository access 选 `langhua98/open-code`。可选的 `OPENCODE_SERVER_PASSWORD` 也可以用同样方式添加，作为 Web 界面的密码。
+### 3. 创建 Codespace，同时填入 token
+
+打开 <https://codespaces.new/langhua98/open-code>。页面上有 **KAGGLE_API_TOKEN** 和 **DEEPSEEK_API_KEY** 两栏，分别粘贴进去，然后点击 **Create codespace**。GitHub 会把它们保存成你的 Codespaces secret，以后新建的 Codespace 都会自动带上。
+
+另一种方式是先在 <https://github.com/settings/codespaces> 里点 **New secret** 手动添加：Name 填 `KAGGLE_API_TOKEN`（或 `DEEPSEEK_API_KEY`），Repository access 选 `langhua98/open-code`。可选的 `OPENCODE_SERVER_PASSWORD` 也可以用同样方式添加，作为 Web 界面的密码。已经在用的 Codespace 添加 secret 后，要点提示里的重新加载（或 Rebuild Container）才能读到。
 
 Token 只存在 Codespaces secrets 里，**不要写进仓库里的任何文件**。
 
@@ -53,9 +57,11 @@ Token 只存在 Codespaces secrets 里，**不要写进仓库里的任何文件*
     - 私有端口的 GitHub 登录 3 小时过期，过期后打开时会闪一下 GitHub 登录页，然后自动回来。
   - **页面空白或打不开**：说明 OpenCode 没在运行。在 Codespace 的终端里输入 `web` 回车就能启动；输入 `web restart` 可以重启。运行 OpenCode 的那个终端不要关，关掉它 OpenCode 就停了。全屏的 OpenCode 没有刷新按钮：从后台划掉它，再点图标打开。
 - **或者在终端里运行** `opencode`，进入终端界面（TUI）。
-- **模型**：默认用 OpenCode Zen 的免费模型 **Nemotron 3 Ultra Free**，不需要任何 key。免费模型经常有人排队：如果提示 `Rate limit exceeded`、`Free usage exceeded` 或 `Endpoint is unavailable`，点输入框下方的模型名，换一个标着「免费」的模型再发一次就行。
+- **模型**：默认用 DeepSeek 官方 API 的 **DeepSeek V4 Pro**；起标题、写摘要这类小任务用更便宜的 **DeepSeek V4.1 Flash**（`opencode.json` 里的 `model` 和 `small_model`）。key 从 Codespaces secret `DEEPSEEK_API_KEY` 读取。
+  - 想省钱，可以点输入框下方的模型名，换成 DeepSeek V4.1 Flash。
+  - 如果提示没有 key 或认证失败，检查 secret 是否已添加、Codespace 是否已重新加载；也可以在 OpenCode 里输入 `/connect`，选 DeepSeek，临时粘贴 key。
+  - 余额用完时，可以换一个 OpenCode Zen 的免费模型（标着「免费」的），不需要 key。
   - GitHub Copilot 已经在 `opencode.json` 的 `disabled_providers` 里隐藏了，因为 Copilot 免费版不包含 Claude Sonnet 这类模型，选了只会报错。以后如果订阅了 Copilot Pro，把 `"github-copilot"` 从这个列表里删掉就能用。
-  - 想要稳定，可以在 OpenCode 里输入 `/connect`，接入 DeepSeek、Kimi、智谱等。
 
 ### OpenCode 能用的工具
 
@@ -72,7 +78,7 @@ Token 只存在 Codespaces secrets 里，**不要写进仓库里的任何文件*
 
 - 浏览器截图保存在 `.playwright-mcp/`，生成的文档放在 `outputs/`，这两个目录都不会提交到 git。
 - 推送代码、开 PR 之前，OpenCode 会先问你。
-- 免费模型用这些工具的本事一般：简单的事情可以，步骤很多的网页操作容易出错。
+- 免费模型用这些工具的本事一般（DeepSeek 好一些）：简单的事情可以，步骤很多的网页操作容易出错。
 
 **已经在用的 Codespace 怎么更新**：在 Codespace 的终端里依次运行下面三条命令，大约需要 3 分钟：
 
@@ -141,7 +147,7 @@ kgpu quota                        # 本周 GPU 配额
 | `AGENTS.md` | 给 OpenCode 的项目规则：开发闭环、节省 GPU 配额、不泄露密钥 |
 | `.opencode/commands/gpu.md` | OpenCode 的 `/gpu` 命令 |
 | `.opencode/skills/` | OpenCode 的技能：代码审查、安全检查、上网调研、处理文档 |
-| `opencode.json` | OpenCode 项目配置：默认免费模型、隐藏 Copilot、接上浏览器工具、装上 [Superpowers](https://github.com/obra/superpowers) 技能插件（v6.4.2） |
+| `opencode.json` | OpenCode 项目配置：默认 DeepSeek 模型、隐藏 Copilot、接上浏览器工具、装上 [Superpowers](https://github.com/obra/superpowers) 技能插件（v6.4.2） |
 | `tests/` | `kgpu` 的单元测试：`python3 -m unittest discover -s tests` |
 
 ## 额度与注意事项

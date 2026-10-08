@@ -26,6 +26,10 @@
       "description": "Kaggle API token (starts with KGAT_), used by tools/kgpu to run jobs on Kaggle GPUs.",
       "documentationUrl": "https://www.kaggle.com/settings/api"
     },
+    "DEEPSEEK_API_KEY": {
+      "description": "DeepSeek API key (starts with sk-). OpenCode's default model is DeepSeek and reads this variable.",
+      "documentationUrl": "https://platform.deepseek.com/api_keys"
+    },
     "OPENCODE_SERVER_PASSWORD": {
       "description": "Optional password for the OpenCode web UI on port 4096 (username: opencode)."
     }
