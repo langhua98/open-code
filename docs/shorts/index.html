@@ -391,6 +391,11 @@ function createSlide(item) {
     if (v === currentVideo) v.play().catch(() => {});
   }
   el._on.error = v => {
+    if (v.src.startsWith('blob:')) {
+      if (blobUrl(item.id) === v.src) { blobFails++; dropBlob(String(item.id)); }  // 不是我们自己扔掉的才算这台手机放不了
+      reloadVideo();
+      return;
+    }
     const n = Number(el.dataset.retried || 0);
     if (n < 3) { el.dataset.retried = String(n + 1); setTimeout(() => { if (vid() === v) reloadVideo(); }, [2000, 8000, 20000][n]); }
     else { errBox.classList.add('show'); el.classList.remove('waiting'); }
@@ -477,6 +482,7 @@ async function loadMore(reset = false, prefetched = null) {
   if (reset) {
     state.offset = 0; state.items = [];
     POOL.forEach(v => { v.pause(); v._slide = null; v.removeAttribute('src'); v.load(); });
+    prefetchGen++; clearBlobs();
     feed.innerHTML = ''; currentVideo = null; cur = -1;
     feed.scrollTop = 0;
   }
@@ -540,7 +546,7 @@ function lend(slide) {
     slide.dataset.retried = '0';
     slide.querySelector('.video-wrap').insertBefore(v, slide.querySelector('.shade-top'));
     v.poster = API.thumb(slide.dataset.id);
-    v.src = API.stream(slide.dataset.id);
+    v.src = blobUrl(slide.dataset.id) || API.stream(slide.dataset.id);
   }
   return v;
 }
@@ -570,6 +576,73 @@ function warm(slide) {
   if (p) p.then(() => { if (v !== currentVideo) v.pause(); }).catch(() => {});
 }
 
+// ── 预取：边看边把后面两条整个下载到内存，翻过去直接从内存播 ──
+// 视频服务每一次分段请求都要现去 Telegram 拿，开头要等 0.2～2 秒；手机播一条视频要先发好几次分段请求，
+// 加起来翻过去就得干等。整条下载下来（大多 1～5 MB）之后从内存播，不再走网络，翻过去立刻动
+const AHEAD = 2, PREFETCH_MAX = 15 * 1024 * 1024;
+const blobs = new Map();  // 视频 id -> { url, ctrl }；url 为空表示还在下
+let blobFails = 0, prefetchGen = 0, prefetchTimer = 0;
+const blobUrl = id => (blobs.get(String(id)) || {}).url || '';
+const canPrefetch = item => !!item && blobFails < 2 && !(item.size > PREFETCH_MAX);
+function dropBlob(id) {
+  const b = blobs.get(id);
+  if (!b) return;
+  blobs.delete(id);
+  b.ctrl.abort();
+  if (b.url) URL.revokeObjectURL(b.url);
+}
+function clearBlobs() { [...blobs.keys()].forEach(dropBlob); }
+function prefetchAround(i) {
+  clearTimeout(prefetchTimer);
+  const gen = ++prefetchGen;
+  // 只留上一条、这一条和后面两条，其余的扔掉省内存
+  const keep = new Set();
+  for (let k = i - 1; k <= i + AHEAD; k++) if (state.items[k]) keep.add(String(state.items[k].id));
+  [...blobs.keys()].forEach(id => { if (!keep.has(id)) dropBlob(id); });
+  const run = async () => {
+    for (let k = i + 1; k <= i + AHEAD; k++) {  // 一条一条下，先下紧挨着的
+      if (gen !== prefetchGen) return;
+      if (canPrefetch(state.items[k])) await prefetch(state.items[k]);
+    }
+  };
+  // 等眼前这条播起来再下，别跟它抢网速（最多等 2.5 秒）
+  const v = currentVideo;
+  if (!v || v.readyState >= 3) { run(); return; }
+  const go = () => { v.removeEventListener('playing', go); clearTimeout(prefetchTimer); if (gen === prefetchGen) run(); };
+  v.addEventListener('playing', go);
+  prefetchTimer = setTimeout(go, 2500);
+}
+async function prefetch(item) {
+  const id = String(item.id);
+  if (blobs.has(id)) return;
+  const rec = { url: '', ctrl: new AbortController() };
+  blobs.set(id, rec);
+  try {
+    const r = await fetch(API.stream(id), { signal: rec.ctrl.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    let b = await r.blob();
+    if (!/^video\//.test(b.type)) b = new Blob([b], { type: 'video/mp4' });
+    if (blobs.get(id) !== rec) return;
+    rec.url = URL.createObjectURL(b);
+    blobReady(id, rec.url);
+  } catch {
+    if (blobs.get(id) === rec) blobs.delete(id);
+  }
+}
+// 下好了：眼前这条要是还卡在开头，直接换成内存里的；下一条借上播放器、换成内存里的再热身出第一帧
+function blobReady(id, url) {
+  const idx = state.items.findIndex(x => String(x.id) === id);
+  const slide = feed.children[idx];
+  if (!slide) return;
+  if (idx === cur) {
+    const v = slide._video;
+    if (v && v.readyState < 3) { v.src = url; v.play().catch(() => {}); }
+  } else if (idx === cur + 1) {
+    const v = lend(slide);
+    if (v && v !== currentVideo) { if (v.src !== url) v.src = url; warm(slide); }
+  }
+}
+
 // ── 上下翻：浏览器原生滚动 + 吸附，JS 只管「现在是第几条」（参考 doomscroller） ──
 // 滚动时每帧最多算一次：过了半屏就换成下一条播（新视频先播起来）；停稳在整页上之后，
 // 把离开的视频倒回开头（翻回去从头播，跟抖音一样），再预热前后两条
@@ -580,7 +653,11 @@ const LOCK = 10;            // 手指先走出 10px 才算拖
 // 只让眼前前后各两条把内容画出来，其余只剩黑底（还在页面里，点赞状态等都留着）
 function markNear() {
   const kids = feed.children;
-  for (let i = Math.max(0, cur - 4); i <= Math.min(kids.length - 1, cur + 4); i++) kids[i].classList.toggle('near', Math.abs(i - cur) <= 2);
+  for (let i = Math.max(0, cur - 4); i <= Math.min(kids.length - 1, cur + 4); i++) {
+    const near = Math.abs(i - cur) <= 2;
+    kids[i].classList.toggle('near', near);
+    if (near) kids[i].querySelector('.poster').loading = 'eager';  // 附近的封面马上加载，别等懒加载
+  }
 }
 function setCur(i) {
   if (i === cur) return;
@@ -594,8 +671,10 @@ function settle(i) {
   warmTimer = setTimeout(() => {
     if (cur !== i) return;
     POOL.forEach(v => { if (v !== currentVideo && v.currentTime > 1) v.currentTime = 0; });
-    warm(feed.children[i + 1]);
     warm(feed.children[i - 1]);
+    const next = feed.children[i + 1];
+    if (next && (blobUrl(next.dataset.id) || !canPrefetch(state.items[i + 1]))) warm(next);
+    prefetchAround(i);
   }, 120);
 }
 // 跳到第 i 条：smooth 是键盘上下键那种平滑滚过去，否则直接到
