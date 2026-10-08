@@ -255,7 +255,7 @@ function playSafe(v) {
   v.muted = shouldMute();
   const p = v.play();
   if (p) p.catch(err => {
-    if (!err || err.name !== 'NotAllowedError' || v.muted) return;
+    if (!err || err.name !== 'NotAllowedError' || v.muted || v !== currentVideo) return;
     unlocked = false;
     document.body.classList.add('muted');
     v.muted = true;
@@ -287,12 +287,7 @@ const ICON = {
 function unlock() {
   if (unlocked) return;
   const cv = currentVideo;
-  POOL.forEach(v => {
-    if (v === cv || !v.src) return;
-    v.muted = true;
-    const p = v.play();
-    if (p) p.then(() => { if (v !== currentVideo) v.pause(); }).catch(() => {});
-  });
+  POOL.forEach(v => { if (v !== cv) silentPlay(v); });
   if (!cv) return;
   const wasPaused = cv.paused;
   cv.muted = wasPaused || !wantSound;  // 你暂停着的，静音着解锁，别冒一声
@@ -304,7 +299,7 @@ function unlock() {
     applyMute();
   }).catch(() => {
     cv.muted = true;
-    if (wasPaused) cv.pause(); else cv.play().catch(() => {});
+    if (wasPaused || cv !== currentVideo) cv.pause(); else cv.play().catch(() => {});
   });
 }
 // 浏览器只认 touchend / pointerup / click / keydown 是「用户点过」，touchstart 不算
@@ -632,6 +627,11 @@ const POOL = [0, 1, 2].map(() => {
   v.setAttribute('webkit-playsinline', '');
   v.muted = true;
   v.preload = 'auto';
+  // 只有眼前这条能出声。翻走的视频以前只是暂停、没静音，之后谁把它又播起来（苹果手机会把滑出屏幕时被它自己停掉的视频
+  // 在重新露出来时接着播；解锁、热身里迟到的 play() 回调也会），它就带着声音在后台播——听到的就是上一条的声音。
+  // 现在：不是眼前这条的播放器，一开始播就静音，不是在热身的直接停掉；有人想给它开声音也立刻关回去
+  v.addEventListener('play', () => { if (v !== currentVideo) { v.muted = true; if (!v._warming) v.pause(); } });
+  v.addEventListener('volumechange', () => { if (v !== currentVideo && !v.muted) v.muted = true; });
   ['playing', 'timeupdate', 'error', 'waiting', 'canplay', 'play', 'pause'].forEach(ev => v.addEventListener(ev, () => {
     const s = v._slide;
     if (s && s._on && s._on[ev]) s._on[ev](v);
@@ -656,8 +656,8 @@ function activate(idx) {
   const slide = feed.children[idx];
   if (!slide) return;
   const video = lend(slide);
-  if (currentVideo && currentVideo !== video) currentVideo.pause();
   currentVideo = video;
+  POOL.forEach(v => { if (v !== video) { v.pause(); v.muted = true; } });
   markSeen(slide.dataset.id);
   slide._userPaused = false;  // 翻回来的视频接着播，跟抖音一样
   slide.classList.remove('paused');
@@ -671,9 +671,15 @@ let warmTimer = 0;
 function warm(slide) {
   const v = lend(slide);
   if (!v || v === currentVideo || v.readyState >= 3) return;
+  silentPlay(v);
+}
+// 静音着播一下再停：热身出第一帧、或者趁手指碰屏幕解锁。播的过程中标着 _warming，上面的守卫才不会立刻把它停掉
+function silentPlay(v) {
   v.muted = true;
+  v._warming = true;
+  const end = () => { v._warming = false; if (v !== currentVideo) v.pause(); };
   const p = v.play();
-  if (p) p.then(() => { if (v !== currentVideo) v.pause(); }).catch(() => {});
+  if (p) p.then(end, end); else end();
 }
 
 // ── 预取：边看边把后面两条整个下载到内存，翻过去直接从内存播 ──
