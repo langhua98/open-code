@@ -44,26 +44,30 @@
   .chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
   .chip{font-size:13px;color:#ddd;background:#222;border-radius:999px;padding:6px 12px}
 
-  /* 上下翻：不用浏览器滚动，整列视频跟着手指走，松手翻页 —— 照抖音 */
+  /* 上下翻：整列视频跟手走，松手翻页 —— 照抖音。每条视频绝对定位在 第几条×屏高 的位置，
+     只有眼前前后各两条显示（.near），移动的那一层始终只有五屏高，手机合成起来不吃力 */
   :root{--vh:100vh}
-  .feed{position:fixed;top:0;left:0;width:100vw;touch-action:none;will-change:transform;backface-visibility:hidden}
-  .slide{position:relative;height:var(--vh);width:100vw;background:#000;overflow:hidden}
+  .feed{position:fixed;top:0;left:0;width:100vw;height:var(--vh);touch-action:none;will-change:transform}
+  .slide{position:absolute;left:0;top:0;height:var(--vh);width:100vw;background:#000;overflow:hidden;display:none}
+  .slide.near{display:block}
 
   /* 抖音的加载动画：青、红两个点来回交换，叠在一起的地方变暗 */
   .dy-loader{position:relative;width:34px;height:12px;isolation:isolate}
   .dy-loader i{position:absolute;top:0;left:11px;width:12px;height:12px;border-radius:50%;mix-blend-mode:multiply}
   .dy-loader i:first-child{background:#25f4ee;transform:translateX(-9px)}
   .dy-loader i:last-child{background:#fe2c55;transform:translateX(9px)}
-  .dy-loader.spin i:first-child{animation:dyA .7s cubic-bezier(.45,0,.55,1) infinite alternate}
-  .dy-loader.spin i:last-child{animation:dyB .7s cubic-bezier(.45,0,.55,1) infinite alternate}
-  @keyframes dyA{from{transform:translateX(-9px) scale(1)}50%{transform:translateX(0) scale(1.18)}to{transform:translateX(9px) scale(1)}}
-  @keyframes dyB{from{transform:translateX(9px) scale(1)}50%{transform:translateX(0) scale(.82)}to{transform:translateX(-9px) scale(1)}}
+  .dy-loader.spin i:first-child{animation:dyA .4s ease-in-out infinite alternate}
+  .dy-loader.spin i:last-child{animation:dyB .4s ease-in-out infinite alternate}
+  @keyframes dyA{from{transform:translateX(-9px) scale(1)}to{transform:translateX(9px) scale(1.2)}}
+  @keyframes dyB{from{transform:translateX(9px) scale(1)}to{transform:translateX(-9px) scale(1.2)}}
 
-  /* 下拉刷新：第一条往下拉，顶上「推荐/最新」淡出，原地出现两个点；松手后两个点转起来 */
-  .pull{position:fixed;top:0;left:0;right:0;z-index:49;display:flex;justify-content:center;
-    padding-top:calc(max(10px, env(safe-area-inset-top)) + 13px);opacity:0;pointer-events:none}
-  .tabs{transition:opacity .2s}
-  body.pulling .tabs{opacity:0;pointer-events:none}
+  /* 下拉刷新（抖音首页）：第一条往下拉时视频不动，整条顶栏跟着手指往下走、淡出，
+     「下拉刷新内容」淡入；松手刷新时顶栏回原位，右上角的搜索换成两个点在转 */
+  .pull-notice{position:fixed;top:0;left:0;right:0;z-index:49;display:flex;justify-content:center;
+    padding-top:calc(max(10px, env(safe-area-inset-top)) + 14px);font-size:16px;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,.6);opacity:0;pointer-events:none}
+  .top-loading{width:36px;height:36px;display:none;align-items:center;justify-content:center}
+  body.refreshing #searchOpen{display:none}
+  body.refreshing .top-loading{display:flex}
   /* 翻到最后一条还往上拉：底下露出「暂时没有更多了」或加载动画 */
   .feed-end{position:fixed;left:0;right:0;bottom:calc(28px + env(safe-area-inset-bottom));z-index:3;display:flex;justify-content:center;
     font-size:13px;color:rgba(255,255,255,.5);opacity:0;pointer-events:none}
@@ -126,7 +130,6 @@
   .topbar,.actions,.info{transition:opacity .25s}
   .toast{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:95;padding:9px 16px;border-radius:8px;background:rgba(0,0,0,.75);font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s}
   .toast.show{opacity:1}
-  #soundTip{position:fixed;left:50%;top:40%;transform:translateX(-50%);z-index:60;background:rgba(0,0,0,.6);color:#fff;font-size:13px;padding:9px 16px;border-radius:999px;white-space:nowrap;pointer-events:none}
   .search-banner{position:fixed;left:50%;top:calc(52px + env(safe-area-inset-top));transform:translateX(-50%);z-index:55;display:none;align-items:center;gap:8px;
     background:rgba(0,0,0,.55);border-radius:999px;padding:6px 6px 6px 12px;font-size:13px;max-width:86vw}
   .search-banner.show{display:flex}
@@ -144,6 +147,7 @@
     <button class="tab" data-mode="new">最新</button>
   </div>
   <button class="icon-btn" id="searchOpen" aria-label="搜索"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+  <div class="top-loading"><div class="dy-loader spin"><i></i><i></i></div></div>
 </div>
 <div class="search-banner" id="searchBanner"><span id="searchBannerText"></span><button id="searchClear">清除</button></div>
 
@@ -160,11 +164,10 @@
   <div class="chips" id="historyChips"></div>
 </div>
 
-<div class="pull" id="pull"><div class="dy-loader" id="pullDots"><i></i><i></i></div></div>
+<div class="pull-notice" id="pullNotice">下拉刷新内容</div>
 <div class="feed-end" id="feedEnd"><div class="dy-loader spin"><i></i><i></i></div><span>暂时没有更多了</span></div>
 <div class="feed" id="feed"></div>
 <div class="toast" id="toast"></div>
-<div id="soundTip">🔈 轻触屏幕开启声音</div>
 
 <script>
 /** 视频服务地址：页面就在视频服务上时用同一个地址；也可以 ?api=https://xxx.workers.dev 指定一次（会记住） */
@@ -231,9 +234,9 @@ function enableSound() {
     if (p) p.then(() => { if (v !== currentVideo) v.pause(); }).catch(() => {});
   });
   document.querySelectorAll('.slide .mute-btn').forEach(b => setMute(b, false));
-  document.getElementById('soundTip').style.display = 'none';
 }
-['pointerdown', 'touchstart', 'keydown'].forEach(ev => document.addEventListener(ev, enableSound, { passive: true }));
+// 浏览器只认 touchend / pointerup / click / keydown 是「用户点过」，touchstart 不算，解锁不了声音
+['touchend', 'pointerup', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, enableSound, { passive: true }));
 
 // ── 顶部：在线状态、推荐/最新、搜索 ──
 const apiStatus = document.getElementById('apiStatus'), apiDot = document.getElementById('apiDot');
@@ -496,12 +499,13 @@ async function loadMore(reset = false, prefetched = null) {
       state.items.push(item);
       const slide = createSlide(item);
       slide.dataset.index = state.items.length - 1;
+      slide.style.top = (state.items.length - 1) * H + 'px';
       feed.appendChild(slide);
     }
     state.offset += data.items.length;
     if (!state.items.length) showStatus(state.q ? `没搜到「${state.q}」相关的视频` : '还没有视频', true);
     else hideStatus();
-    if (cur < 0 && state.items.length) { cur = 0; activate(0); }
+    if (cur < 0 && state.items.length) goTo(0); else markNear();
   } catch (e) {
     console.error(e);
     if (state.items.length) toast('网络不给力，请稍后重试');
@@ -537,7 +541,7 @@ function lend(slide) {
   if (!slide || !slide.classList.contains('slide')) return null;
   const v = POOL[Number(slide.dataset.index) % POOL.length];
   if (v._slide !== slide) {
-    if (v._slide) { v.pause(); v._slide._video = null; v._slide.querySelector('.poster').style.opacity = '1'; }
+    if (v._slide) { v.pause(); v._slide._video = null; v._slide.classList.remove('waiting'); v._slide.querySelector('.poster').style.opacity = '1'; }
     v._slide = slide;
     slide._video = v;
     slide.dataset.retried = '0';
@@ -551,80 +555,116 @@ function activate(idx) {
   const slide = feed.children[idx];
   if (!slide) return;
   const video = lend(slide);
-  lend(feed.children[idx + 1]);  // 后面两页先借好、先缓冲
-  lend(feed.children[idx + 2]);
   if (currentVideo && currentVideo !== video) currentVideo.pause();
   currentVideo = video;
   markSeen(slide.dataset.id);
-  video.currentTime = 0;  // 翻回来的视频从头播，跟抖音一样
+  if (video.currentTime > 1) video.currentTime = 0;  // 翻回看过的视频从头播，跟抖音一样
   video.muted = !soundOn;
   setMute(slide.querySelector('.mute-btn'), video.muted);
   if (video.readyState < 3) slide.classList.add('waiting');
   // 万一还是被拦（没解锁过），先静音播着，别停在那儿等人点
   video.play().catch(() => { video.muted = true; setMute(slide.querySelector('.mute-btn'), true); video.play().catch(() => {}); });
   slide.querySelector('.play-indicator').classList.remove('show');
+  // 翻页动画走完再去预热前后两条，动画期间不抢主线程
+  clearTimeout(warmTimer);
+  warmTimer = setTimeout(() => { if (cur === idx) { warm(feed.children[idx + 1]); warm(feed.children[idx - 1]); } }, DUR + 50);
   if (idx >= state.items.length - 4 && state.items.length < state.total) loadMore();
 }
+// 预热：苹果手机不管 preload，暂停着的视频一个字节都不下，翻过去才开始加载，看着就像卡住了。
+// 静音的视频允许自动播：先静音播一下，出了第一帧就停，数据和首帧都备好了，翻过去立刻接着播
+let warmTimer = 0;
+function warm(slide) {
+  const v = lend(slide);
+  if (!v || v === currentVideo || v.readyState >= 3) return;
+  v.muted = true;
+  const p = v.play();
+  if (p) p.then(() => { if (v !== currentVideo) v.pause(); }).catch(() => {});
+}
 
-// ── 上下翻：手指按住整列视频 1:1 跟着走，松手按拖的距离和甩的速度翻到上一条/下一条 —— 照抖音 ──
+// ── 上下翻：照抖音的手感 ──
+// 按下后手指先走出 10px 才定方向（横着滑留给清屏），定了是竖着，整列视频 1:1 跟手（扣掉这 10px，不会一下跳）；
+// 松手：拖不到 20px 弹回；超过四分之一屏翻页；在这之间看快慢——250ms 内甩完或者松手时还在快速移动就翻。
+// 翻页 300ms，先快后慢落定
 let cur = -1;               // 眼前是第几条
-let refreshing = false;     // 正在下拉刷新
+let refreshing = false;     // 正在刷新
 let offset = 0;             // 整列现在往上挪了多少（px，负数）
 let H = window.innerHeight;
-const EASE = 'cubic-bezier(.2,.75,.25,1)';  // 先快后慢地落定
+const LOCK = 10, DUR = 300, EASE = 'cubic-bezier(.25,.46,.45,.94)';
 function moveTo(y, ms) {
   offset = y;
   feed.style.transition = ms ? `transform ${ms}ms ${EASE}` : 'none';
   feed.style.transform = `translate3d(0,${y}px,0)`;
 }
-function goTo(i, v = 0) {
+// 只让眼前前后各两条显示，其余 display:none（还在页面里，点赞状态等都留着）
+function markNear() {
+  const kids = feed.children;
+  for (let i = Math.max(0, cur - 4); i <= Math.min(kids.length - 1, cur + 4); i++) kids[i].classList.toggle('near', Math.abs(i - cur) <= 2);
+}
+function goTo(i) {
   const n = feed.children.length;
   if (!n) return;
   i = Math.max(0, Math.min(n - 1, i));
-  const dist = Math.abs(offset + i * H);
-  // 剩的路越长越慢一点；甩得越快越短，最短 180ms、最长 360ms
-  const ms = Math.round(Math.max(180, Math.min(360, dist / Math.max(1.6, Math.abs(v)) + 120)));
-  moveTo(-i * H, dist < 1 ? 0 : ms);
+  const changed = i !== cur;
+  if (changed) { cur = i; markNear(); }
+  moveTo(-i * H, Math.abs(offset + i * H) < 1 ? 0 : DUR);
   feedEnd.style.transition = 'opacity .2s';
   feedEnd.style.opacity = '0';
-  if (i !== cur) { cur = i; activate(i); }
+  if (changed) activate(i);
 }
 function fitHeight() {
   H = window.innerHeight;
   document.documentElement.style.setProperty('--vh', H + 'px');
-  if (!refreshing) moveTo(-Math.max(0, cur) * H, 0);
+  [...feed.children].forEach((x, i) => { x.style.top = i * H + 'px'; });
+  moveTo(-Math.max(0, cur) * H, 0);
 }
 fitHeight();
 window.addEventListener('resize', fitHeight);
 
 const feedEnd = document.getElementById('feedEnd');
+const topbar = document.querySelector('.topbar'), pullNotice = document.getElementById('pullNotice');
+const PULL_MAX = 60;  // 顶栏最多跟着往下走 60px，走满了松手就刷新
+// 下拉时顶栏和「下拉刷新内容」一起往下走；顶栏淡出，提示字过半程才淡入
+function setHeader(m, animate) {
+  const y = Math.min(PULL_MAX, Math.max(0, m));
+  for (const el of [topbar, pullNotice]) {
+    el.style.transition = animate ? 'transform .3s, opacity .3s' : 'none';
+    el.style.transform = y ? `translate3d(0,${y}px,0)` : '';
+  }
+  topbar.style.opacity = y ? String(Math.max(0, 1 - y / (PULL_MAX / 2))) : '';
+  pullNotice.style.opacity = String(Math.max(0, Math.min(1, y / (PULL_MAX / 2) - 0.5)));
+}
 const rubber = (over, max) => max * (1 - Math.exp(-over / (max * 2)));  // 拉过头越拉越沉
 let g = null, lastDrag = 0;
 feed.addEventListener('touchstart', e => {
   g = null;
-  if (e.touches.length > 1 || refreshing || !feed.children.length || e.target.closest('.progress-wrap')) return;
-  // 还在翻页动画里又按住：就地停下，从这里接着拖
+  if (e.touches.length > 1 || !feed.children.length || e.target.closest('.progress-wrap')) return;
+  // 翻页动画还没走完又按住：就地停下，从这里接着拖
   if (feed.style.transition !== 'none') moveTo(new DOMMatrix(getComputedStyle(feed).transform).m42, 0);
   const t = e.touches[0];
-  g = { x: t.clientX, y: t.clientY, base: offset, from: Math.max(0, Math.min(feed.children.length - 1, Math.round(-offset / H))), axis: '', pts: [[t.clientY, e.timeStamp]] };
+  g = { x: t.clientX, y: t.clientY, t0: e.timeStamp, base: offset, from: Math.max(0, Math.min(feed.children.length - 1, Math.round(-offset / H))), axis: '', pull: 0, pts: [[t.clientY, e.timeStamp]] };
 }, { passive: true });
 feed.addEventListener('touchmove', e => {
   if (!g) return;
   const t = e.touches[0], dx = t.clientX - g.x, dy = t.clientY - g.y;
   if (!g.axis) {
-    if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
-    g.axis = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x';  // 横着滑留给清屏
+    if (Math.abs(dx) <= LOCK && Math.abs(dy) <= LOCK) return;
+    g.axis = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x';
   }
   if (g.axis !== 'y') return;
   e.preventDefault();
   g.pts.push([t.clientY, e.timeStamp]);
-  while (g.pts.length > 2 && e.timeStamp - g.pts[0][1] > 100) g.pts.shift();
-  const top = 0, bottom = -(feed.children.length - 1) * H;
-  let y = g.base + dy;
-  if (y > top) {                       // 第一条往下拉 → 下拉刷新
-    y = top + rubber(y - top, 140);
-    setPull(y);
-  } else if (y < bottom) {             // 最后一条往上拉 → 底下露出提示
+  while (g.pts.length > 2 && e.timeStamp - g.pts[0][1] > 80) g.pts.shift();
+  const m = dy - Math.sign(dy) * LOCK;  // 扣掉定方向的那 10px
+  if (g.from === 0 && g.base + m >= 0 && !refreshing) {  // 第一条往下拉：视频不动，顶栏往下走
+    g.pull = m;
+    setHeader(m);
+    moveTo(0, 0);
+    return;
+  }
+  if (g.pull) { g.pull = 0; setHeader(0); }
+  const bottom = -(feed.children.length - 1) * H;
+  let y = Math.min(0, g.base + m);
+  if (y < bottom) {                    // 最后一条往上拉：越拉越沉，底下露出提示
     const over = rubber(bottom - y, 140);
     y = bottom - over;
     feedEnd.classList.toggle('loading', state.loading || state.items.length < state.total);
@@ -633,22 +673,29 @@ feed.addEventListener('touchmove', e => {
   }
   moveTo(y, 0);
 }, { passive: false });
-function endDrag() {
+function endDrag(e) {
   if (!g) return;
   const d = g; g = null;
   if (d.axis !== 'y') return;
   lastDrag = Date.now();
-  const [a, b] = [d.pts[0], d.pts[d.pts.length - 1]];
-  const v = (b[0] - a[0]) / Math.max(16, b[1] - a[1]);  // px/ms，往下为正
-  if (offset > 0) {
-    if (offset >= PULL_AT) refresh(); else { setPull(0, true); goTo(0); }
+  if (d.pull > 0) {
+    const go = d.pull >= PULL_MAX;
+    setHeader(0, true);
+    if (go) refresh();
     return;
   }
-  const moved = offset + d.from * H;  // 相对起点拖了多少，往下为正
+  const moved = offset + d.from * H;               // 相对起点拖了多少，往下为正
+  const [a, b] = [d.pts[0], d.pts[d.pts.length - 1]];
+  const v = (b[0] - a[0]) / Math.max(16, b[1] - a[1]);  // 松手前一小段的速度 px/ms，往下为正
+  const dir = moved < 0 ? 1 : -1;                  // 1 = 下一条，-1 = 上一条
   let to = d.from;
-  if (moved < -H * 0.2 || (v < -0.4 && moved < -8)) to++;       // 拖过五分之一屏，或者往上一甩
-  else if (moved > H * 0.2 || (v > 0.4 && moved > 8)) to--;
-  goTo(to, v);
+  if (Math.abs(moved) >= 20) {
+    const far = Math.abs(moved) > H / 4;
+    const quick = e.timeStamp - d.t0 < 250 || Math.abs(v) > 0.3;
+    const backOff = Math.abs(v) > 0.3 && Math.sign(v) === dir;  // 松手前又往回拽了：不翻
+    if ((far || quick) && !backOff) to += dir;
+  }
+  goTo(to);
 }
 feed.addEventListener('touchend', endDrag, { passive: true });
 feed.addEventListener('touchcancel', endDrag, { passive: true });
@@ -658,7 +705,7 @@ feed.addEventListener('click', e => { if (Date.now() - lastDrag < 300) { e.stopP
 let wheelLock = 0;
 feed.addEventListener('wheel', e => {
   e.preventDefault();
-  if (refreshing || Math.abs(e.deltaY) < 15 || Date.now() < wheelLock) return;
+  if (Math.abs(e.deltaY) < 15 || Date.now() < wheelLock) return;
   wheelLock = Date.now() + 450;
   goTo(cur + (e.deltaY > 0 ? 1 : -1));
 }, { passive: false });
@@ -675,35 +722,17 @@ feed.addEventListener('touchend', e => {
   toast(clean ? '已清屏，右滑恢复' : '已恢复');
 }, { passive: true });
 
-// ── 刷新：第一条视频往下拉，或者再点一下当前的「推荐/最新」 ──
-const pullEl = document.getElementById('pull'), pullDots = document.getElementById('pullDots');
-const PULL_AT = 70;  // 拉下来这么多（px，算上阻力之后）松手就刷新
-// 拉的时候：顶上「推荐/最新」跟着淡出，两个点淡入、从叠在一起慢慢分开
-function setPull(d, animate) {
-  const p = Math.min(1, Math.max(0, d) / PULL_AT);
-  pullEl.style.transition = animate ? 'opacity .2s' : 'none';
-  pullEl.style.opacity = refreshing ? '1' : String(p);
-  if (!refreshing) {
-    const [a, b] = pullDots.children;
-    a.style.transform = `translateX(${-9 * p}px)`;
-    b.style.transform = `translateX(${9 * p}px)`;
-  }
-  document.body.classList.toggle('pulling', d > 0 || refreshing);
-}
-
+// ── 刷新：第一条视频往下拉，或者再点一下当前的「推荐/最新」；转圈的是右上角的两个点 ──
 async function refresh() {
   if (refreshing || state.loading) return;
   refreshing = true;
-  [...pullDots.children].forEach(x => { x.style.transform = ''; });
-  pullDots.classList.add('spin');
-  setPull(1, true);
-  if (offset > 0 || cur <= 0) goTo(0);  // 弹回去，两个点留在顶上转
+  document.body.classList.add('refreshing');
   const oldSeed = state.seed;
   state.seed = Math.floor(Math.random() * 1e9);  // 推荐：换一批
   try {
     const [data] = await Promise.all([
       fetchList(0, state.limit, state.q),
-      new Promise(r => setTimeout(r, 600)),  // 动画至少转一会儿，别一闪而过
+      new Promise(r => setTimeout(r, 500)),  // 两个点至少转一会儿，别一闪而过
     ]);
     await loadMore(true, data);
   } catch {
@@ -711,9 +740,7 @@ async function refresh() {
     toast('网络不给力，请稍后重试');
   } finally {
     refreshing = false;
-    pullDots.classList.remove('spin');
-    setPull(0, true);
-    goTo(Math.max(0, cur));
+    document.body.classList.remove('refreshing');
   }
 }
 
@@ -721,7 +748,7 @@ document.addEventListener('keydown', e => {
   if (searchPage.classList.contains('show')) return;
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
-    if (!refreshing) goTo(cur + (e.key === 'ArrowDown' ? 1 : -1));
+    goTo(cur + (e.key === 'ArrowDown' ? 1 : -1));
   }
   if (e.key === ' ' && currentVideo) { e.preventDefault(); if (currentVideo.paused) currentVideo.play().catch(() => {}); else currentVideo.pause(); }
 });
