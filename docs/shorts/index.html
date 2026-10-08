@@ -8,9 +8,11 @@
 <meta name="apple-mobile-web-app-title" content="小橘抖音" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
-<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
-<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
-<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" type="image/png" sizes="192x192" href="xjdy-192.png" />
+<link rel="shortcut icon" href="xjdy-192.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="xjdy-180.png" />
+<link rel="apple-touch-icon-precomposed" sizes="180x180" href="xjdy-180.png" />
+<link rel="manifest" href="xjdy.webmanifest" />
 <style>
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   :root{--accent:#fe2c55;--accent2:#25f4ee;--dim:rgba(255,255,255,.65)}
@@ -42,18 +44,39 @@
   .chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
   .chip{font-size:13px;color:#ddd;background:#222;border-radius:999px;padding:6px 12px}
 
-  .feed{height:100vh;height:100dvh;width:100vw;overflow-y:scroll;overflow-x:hidden;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain}
-  .feed.snap-back{transition:transform .3s ease}
+  /* 上下翻：不用浏览器滚动，整列视频跟着手指走，松手翻页 —— 照抖音 */
+  :root{--vh:100vh}
+  .feed{position:fixed;top:0;left:0;width:100vw;touch-action:none;will-change:transform;backface-visibility:hidden}
+  .slide{position:relative;height:var(--vh);width:100vw;background:#000;overflow:hidden}
 
-  /* 下拉刷新：在第一条视频往下拉，顶上「推荐/最新」换成刷新提示 —— 照抖音 */
-  .pull{position:fixed;top:0;left:0;right:0;z-index:49;display:flex;align-items:center;justify-content:center;gap:6px;
-    padding-top:max(16px, env(safe-area-inset-top));font-size:14px;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,.6);opacity:0;pointer-events:none}
-  .pull svg{filter:drop-shadow(0 1px 3px rgba(0,0,0,.6))}
-  .pull.spin svg{animation:spin .8s linear infinite}
+  /* 抖音的加载动画：青、红两个点来回交换，叠在一起的地方变暗 */
+  .dy-loader{position:relative;width:34px;height:12px;isolation:isolate}
+  .dy-loader i{position:absolute;top:0;left:11px;width:12px;height:12px;border-radius:50%;mix-blend-mode:multiply}
+  .dy-loader i:first-child{background:#25f4ee;transform:translateX(-9px)}
+  .dy-loader i:last-child{background:#fe2c55;transform:translateX(9px)}
+  .dy-loader.spin i:first-child{animation:dyA .7s cubic-bezier(.45,0,.55,1) infinite alternate}
+  .dy-loader.spin i:last-child{animation:dyB .7s cubic-bezier(.45,0,.55,1) infinite alternate}
+  @keyframes dyA{from{transform:translateX(-9px) scale(1)}50%{transform:translateX(0) scale(1.18)}to{transform:translateX(9px) scale(1)}}
+  @keyframes dyB{from{transform:translateX(9px) scale(1)}50%{transform:translateX(0) scale(.82)}to{transform:translateX(-9px) scale(1)}}
+
+  /* 下拉刷新：第一条往下拉，顶上「推荐/最新」淡出，原地出现两个点；松手后两个点转起来 */
+  .pull{position:fixed;top:0;left:0;right:0;z-index:49;display:flex;justify-content:center;
+    padding-top:calc(max(10px, env(safe-area-inset-top)) + 13px);opacity:0;pointer-events:none}
   .tabs{transition:opacity .2s}
   body.pulling .tabs{opacity:0;pointer-events:none}
-  .feed::-webkit-scrollbar{display:none}
-  .slide{position:relative;height:100vh;height:100dvh;width:100vw;scroll-snap-align:start;scroll-snap-stop:always;background:#000;overflow:hidden}
+  /* 翻到最后一条还往上拉：底下露出「暂时没有更多了」或加载动画 */
+  .feed-end{position:fixed;left:0;right:0;bottom:calc(28px + env(safe-area-inset-bottom));z-index:3;display:flex;justify-content:center;
+    font-size:13px;color:rgba(255,255,255,.5);opacity:0;pointer-events:none}
+  .feed-end .dy-loader{display:none}
+  .feed-end.loading .dy-loader{display:block}
+  .feed-end.loading span{display:none}
+  /* 视频卡住在缓冲：进度条位置一根白线从中间往两边散开 */
+  .buffer-line{position:absolute;left:0;right:0;bottom:calc(36px + env(safe-area-inset-bottom));height:2px;z-index:7;overflow:hidden;display:none;pointer-events:none}
+  .slide.no-related .buffer-line{bottom:env(safe-area-inset-bottom)}
+  .buffer-line::after{content:"";position:absolute;left:0;top:0;width:100%;height:100%;background:#fff;transform:scaleX(0);animation:bufLine .9s ease-out infinite}
+  @keyframes bufLine{from{transform:scaleX(0);opacity:1}to{transform:scaleX(1);opacity:0}}
+  .slide.waiting .buffer-line{display:block}
+  .slide.waiting .progress-track{opacity:0}
   .video-wrap{position:absolute;inset:0}
   .video-wrap video,.poster{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:transparent}
   .poster{transition:opacity .4s}
@@ -96,9 +119,7 @@
   @keyframes heartPop{0%{transform:translate(-50%,-50%) scale(0) rotate(-15deg);opacity:0}15%{opacity:1}35%{transform:translate(-50%,-50%) scale(1.15) rotate(-15deg)}100%{transform:translate(-50%,-80%) scale(1.3) rotate(-15deg);opacity:0}}
   .slide-error{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:7;display:none;padding:10px 16px;border-radius:999px;background:rgba(0,0,0,.6);font-size:13px}
   .slide-error.show{display:block}
-  .status{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--dim);z-index:2;text-align:center;padding:24px}
-  .spinner{width:28px;height:28px;border:2px solid rgba(255,255,255,.15);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
+  .status{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--dim);z-index:40;text-align:center;padding:24px}
 
   /* 清屏：左滑把按钮和文字都藏起来，右滑恢复 */
   body.clean .topbar,body.clean .actions,body.clean .info,body.clean .shade-top,body.clean .shade-bottom{opacity:0;pointer-events:none}
@@ -139,7 +160,8 @@
   <div class="chips" id="historyChips"></div>
 </div>
 
-<div class="pull" id="pull"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg><span id="pullText">下拉刷新</span></div>
+<div class="pull" id="pull"><div class="dy-loader" id="pullDots"><i></i><i></i></div></div>
+<div class="feed-end" id="feedEnd"><div class="dy-loader spin"><i></i><i></i></div><span>暂时没有更多了</span></div>
 <div class="feed" id="feed"></div>
 <div class="toast" id="toast"></div>
 <div id="soundTip">🔈 轻触屏幕开启声音</div>
@@ -332,6 +354,7 @@ function createSlide(item) {
       ${meta ? `<div class="meta">${escapeHtml(meta)}</div>` : ''}
     </div>
     <div class="progress-wrap"><div class="progress-track"><div class="progress-bar"></div></div></div>
+    <div class="buffer-line"></div>
   `;
 
   const $ = s => el.querySelector(s);
@@ -355,7 +378,9 @@ function createSlide(item) {
   $('.author-btn').onclick = e => { e.stopPropagation(); if (item.author) search(item.author); else toast('这条视频没有作者信息'); };
 
   el._on = {
-    playing: () => { poster.style.opacity = '0'; },
+    playing: () => { poster.style.opacity = '0'; el.classList.remove('waiting'); },
+    waiting: v => { if (v === currentVideo) el.classList.add('waiting'); },
+    canplay: () => { el.classList.remove('waiting'); },
     timeupdate: v => { if (v.duration) bar.style.width = (v.currentTime / v.duration * 100) + '%'; },
   };
 
@@ -371,7 +396,7 @@ function createSlide(item) {
   el._on.error = v => {
     const n = Number(el.dataset.retried || 0);
     if (n < 3) { el.dataset.retried = String(n + 1); setTimeout(() => { if (vid() === v) reloadVideo(); }, [2000, 8000, 20000][n]); }
-    else errBox.classList.add('show');
+    else { errBox.classList.add('show'); el.classList.remove('waiting'); }
   };
   errBox.addEventListener('click', e => { e.stopPropagation(); reloadVideo(); });
 
@@ -450,17 +475,16 @@ function createSlide(item) {
   return el;
 }
 
-const observers = new Map();
 async function loadMore(reset = false, prefetched = null) {
   if (state.loading) return;
   if (reset) {
     state.offset = 0; state.items = [];
-    observers.forEach(o => o.disconnect()); observers.clear();
     POOL.forEach(v => { v.pause(); v._slide = null; v.removeAttribute('src'); v.load(); });
-    feed.innerHTML = ''; feed.scrollTop = 0; currentVideo = null;
+    feed.innerHTML = ''; currentVideo = null; cur = -1;
+    moveTo(0, 0);
   }
   state.loading = true;
-  showStatus();
+  if (reset) showStatus();
   try {
     const data = prefetched || await fetchList(state.offset, state.limit, state.q);
     state.total = data.total;
@@ -473,20 +497,21 @@ async function loadMore(reset = false, prefetched = null) {
       const slide = createSlide(item);
       slide.dataset.index = state.items.length - 1;
       feed.appendChild(slide);
-      observe(slide);
     }
     state.offset += data.items.length;
     if (!state.items.length) showStatus(state.q ? `没搜到「${state.q}」相关的视频` : '还没有视频', true);
     else hideStatus();
+    if (cur < 0 && state.items.length) { cur = 0; activate(0); }
   } catch (e) {
     console.error(e);
-    showStatus('连不上视频服务，轻点重试', true);
+    if (state.items.length) toast('网络不给力，请稍后重试');
+    else showStatus('网络不给力，轻点重试', true);
   } finally { state.loading = false; }
 }
 function showStatus(text, final) {
   let s = document.getElementById('global-status');
-  if (!s) { s = document.createElement('div'); s.id = 'global-status'; s.className = 'status'; feed.appendChild(s); }
-  s.innerHTML = final ? `<div>${escapeHtml(text)}</div>` : `<div class="spinner"></div><div>加载中…</div>`;
+  if (!s) { s = document.createElement('div'); s.id = 'global-status'; s.className = 'status'; document.body.appendChild(s); }
+  s.innerHTML = final ? `<div>${escapeHtml(text)}</div>` : `<div class="dy-loader spin"><i></i><i></i></div>`;
   s.onclick = final ? () => loadMore(state.items.length === 0) : null;
 }
 function hideStatus() { const s = document.getElementById('global-status'); if (s) s.remove(); }
@@ -502,7 +527,7 @@ const POOL = [0, 1, 2].map(() => {
   v.setAttribute('webkit-playsinline', '');
   v.muted = true;
   v.preload = 'auto';
-  ['playing', 'timeupdate', 'error'].forEach(ev => v.addEventListener(ev, () => {
+  ['playing', 'timeupdate', 'error', 'waiting', 'canplay'].forEach(ev => v.addEventListener(ev, () => {
     const s = v._slide;
     if (s && s._on && s._on[ev]) s._on[ev](v);
   }));
@@ -522,29 +547,121 @@ function lend(slide) {
   }
   return v;
 }
-function observe(slide) {
-  const io = new IntersectionObserver(entries => entries.forEach(entry => {
-    if (entry.isIntersecting && entry.intersectionRatio > 0.7) {
-      const idx = Number(slide.dataset.index);
-      const video = lend(slide);
-      lend(feed.children[idx + 1]);  // 后面两页先借好、先缓冲
-      lend(feed.children[idx + 2]);
-      if (currentVideo && currentVideo !== video) currentVideo.pause();
-      currentVideo = video;
-      markSeen(slide.dataset.id);
-      video.muted = !soundOn;
-      setMute(slide.querySelector('.mute-btn'), video.muted);
-      // 万一还是被拦（没解锁过），先静音播着，别停在那儿等人点
-      video.play().catch(() => { video.muted = true; setMute(slide.querySelector('.mute-btn'), true); video.play().catch(() => {}); });
-      slide.querySelector('.play-indicator').classList.remove('show');
-      if (idx >= state.items.length - 4 && state.items.length < state.total) loadMore();
-    } else if (entry.intersectionRatio < 0.2 && slide._video) {
-      slide._video.pause();
-    }
-  }), { threshold: [0, 0.2, 0.7, 1] });
-  io.observe(slide);
-  observers.set(String(slide.dataset.id), io);
+function activate(idx) {
+  const slide = feed.children[idx];
+  if (!slide) return;
+  const video = lend(slide);
+  lend(feed.children[idx + 1]);  // 后面两页先借好、先缓冲
+  lend(feed.children[idx + 2]);
+  if (currentVideo && currentVideo !== video) currentVideo.pause();
+  currentVideo = video;
+  markSeen(slide.dataset.id);
+  video.currentTime = 0;  // 翻回来的视频从头播，跟抖音一样
+  video.muted = !soundOn;
+  setMute(slide.querySelector('.mute-btn'), video.muted);
+  if (video.readyState < 3) slide.classList.add('waiting');
+  // 万一还是被拦（没解锁过），先静音播着，别停在那儿等人点
+  video.play().catch(() => { video.muted = true; setMute(slide.querySelector('.mute-btn'), true); video.play().catch(() => {}); });
+  slide.querySelector('.play-indicator').classList.remove('show');
+  if (idx >= state.items.length - 4 && state.items.length < state.total) loadMore();
 }
+
+// ── 上下翻：手指按住整列视频 1:1 跟着走，松手按拖的距离和甩的速度翻到上一条/下一条 —— 照抖音 ──
+let cur = -1;               // 眼前是第几条
+let refreshing = false;     // 正在下拉刷新
+let offset = 0;             // 整列现在往上挪了多少（px，负数）
+let H = window.innerHeight;
+const EASE = 'cubic-bezier(.2,.75,.25,1)';  // 先快后慢地落定
+function moveTo(y, ms) {
+  offset = y;
+  feed.style.transition = ms ? `transform ${ms}ms ${EASE}` : 'none';
+  feed.style.transform = `translate3d(0,${y}px,0)`;
+}
+function goTo(i, v = 0) {
+  const n = feed.children.length;
+  if (!n) return;
+  i = Math.max(0, Math.min(n - 1, i));
+  const dist = Math.abs(offset + i * H);
+  // 剩的路越长越慢一点；甩得越快越短，最短 180ms、最长 360ms
+  const ms = Math.round(Math.max(180, Math.min(360, dist / Math.max(1.6, Math.abs(v)) + 120)));
+  moveTo(-i * H, dist < 1 ? 0 : ms);
+  feedEnd.style.transition = 'opacity .2s';
+  feedEnd.style.opacity = '0';
+  if (i !== cur) { cur = i; activate(i); }
+}
+function fitHeight() {
+  H = window.innerHeight;
+  document.documentElement.style.setProperty('--vh', H + 'px');
+  if (!refreshing) moveTo(-Math.max(0, cur) * H, 0);
+}
+fitHeight();
+window.addEventListener('resize', fitHeight);
+
+const feedEnd = document.getElementById('feedEnd');
+const rubber = (over, max) => max * (1 - Math.exp(-over / (max * 2)));  // 拉过头越拉越沉
+let g = null, lastDrag = 0;
+feed.addEventListener('touchstart', e => {
+  g = null;
+  if (e.touches.length > 1 || refreshing || !feed.children.length || e.target.closest('.progress-wrap')) return;
+  // 还在翻页动画里又按住：就地停下，从这里接着拖
+  if (feed.style.transition !== 'none') moveTo(new DOMMatrix(getComputedStyle(feed).transform).m42, 0);
+  const t = e.touches[0];
+  g = { x: t.clientX, y: t.clientY, base: offset, from: Math.max(0, Math.min(feed.children.length - 1, Math.round(-offset / H))), axis: '', pts: [[t.clientY, e.timeStamp]] };
+}, { passive: true });
+feed.addEventListener('touchmove', e => {
+  if (!g) return;
+  const t = e.touches[0], dx = t.clientX - g.x, dy = t.clientY - g.y;
+  if (!g.axis) {
+    if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+    g.axis = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x';  // 横着滑留给清屏
+  }
+  if (g.axis !== 'y') return;
+  e.preventDefault();
+  g.pts.push([t.clientY, e.timeStamp]);
+  while (g.pts.length > 2 && e.timeStamp - g.pts[0][1] > 100) g.pts.shift();
+  const top = 0, bottom = -(feed.children.length - 1) * H;
+  let y = g.base + dy;
+  if (y > top) {                       // 第一条往下拉 → 下拉刷新
+    y = top + rubber(y - top, 140);
+    setPull(y);
+  } else if (y < bottom) {             // 最后一条往上拉 → 底下露出提示
+    const over = rubber(bottom - y, 140);
+    y = bottom - over;
+    feedEnd.classList.toggle('loading', state.loading || state.items.length < state.total);
+    feedEnd.style.transition = 'none';
+    feedEnd.style.opacity = String(Math.min(1, over / 50));
+  }
+  moveTo(y, 0);
+}, { passive: false });
+function endDrag() {
+  if (!g) return;
+  const d = g; g = null;
+  if (d.axis !== 'y') return;
+  lastDrag = Date.now();
+  const [a, b] = [d.pts[0], d.pts[d.pts.length - 1]];
+  const v = (b[0] - a[0]) / Math.max(16, b[1] - a[1]);  // px/ms，往下为正
+  if (offset > 0) {
+    if (offset >= PULL_AT) refresh(); else { setPull(0, true); goTo(0); }
+    return;
+  }
+  const moved = offset + d.from * H;  // 相对起点拖了多少，往下为正
+  let to = d.from;
+  if (moved < -H * 0.2 || (v < -0.4 && moved < -8)) to++;       // 拖过五分之一屏，或者往上一甩
+  else if (moved > H * 0.2 || (v > 0.4 && moved > 8)) to--;
+  goTo(to, v);
+}
+feed.addEventListener('touchend', endDrag, { passive: true });
+feed.addEventListener('touchcancel', endDrag, { passive: true });
+// 拖完松手不算「点一下」（不暂停、不点赞）
+feed.addEventListener('click', e => { if (Date.now() - lastDrag < 300) { e.stopPropagation(); e.preventDefault(); } }, true);
+// 电脑上：滚轮一格翻一条
+let wheelLock = 0;
+feed.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (refreshing || Math.abs(e.deltaY) < 15 || Date.now() < wheelLock) return;
+  wheelLock = Date.now() + 450;
+  goTo(cur + (e.deltaY > 0 ? 1 : -1));
+}, { passive: false });
 
 // 左滑清屏，右滑恢复（横着滑才算，竖着滑照常切视频）
 let sx = 0, sy = 0;
@@ -559,66 +676,44 @@ feed.addEventListener('touchend', e => {
 }, { passive: true });
 
 // ── 刷新：第一条视频往下拉，或者再点一下当前的「推荐/最新」 ──
-const pullEl = document.getElementById('pull'), pullText = document.getElementById('pullText');
-const PULL_AT = 60;  // 拉过这么多（px）松手就刷新
-let pull = null, refreshing = false;
-function setPull(d) {
-  feed.style.transform = d ? `translateY(${d}px)` : '';
-  pullEl.style.opacity = refreshing ? '1' : String(Math.min(1, d / 40));
+const pullEl = document.getElementById('pull'), pullDots = document.getElementById('pullDots');
+const PULL_AT = 70;  // 拉下来这么多（px，算上阻力之后）松手就刷新
+// 拉的时候：顶上「推荐/最新」跟着淡出，两个点淡入、从叠在一起慢慢分开
+function setPull(d, animate) {
+  const p = Math.min(1, Math.max(0, d) / PULL_AT);
+  pullEl.style.transition = animate ? 'opacity .2s' : 'none';
+  pullEl.style.opacity = refreshing ? '1' : String(p);
   if (!refreshing) {
-    pullEl.querySelector('svg').style.transform = `rotate(${Math.round(d / PULL_AT * 270)}deg)`;
-    pullText.textContent = d >= PULL_AT ? '松开刷新' : '下拉刷新';
+    const [a, b] = pullDots.children;
+    a.style.transform = `translateX(${-9 * p}px)`;
+    b.style.transform = `translateX(${9 * p}px)`;
   }
   document.body.classList.toggle('pulling', d > 0 || refreshing);
 }
-function snapPull(d) {
-  feed.classList.add('snap-back');
-  setPull(d);
-  setTimeout(() => feed.classList.remove('snap-back'), 300);
-}
-feed.addEventListener('touchstart', e => {
-  pull = feed.scrollTop <= 0 && !refreshing && !state.loading
-    ? { x: e.touches[0].clientX, y: e.touches[0].clientY, d: 0, on: false } : null;
-}, { passive: true });
-feed.addEventListener('touchmove', e => {
-  if (!pull) return;
-  const dx = e.touches[0].clientX - pull.x, dy = e.touches[0].clientY - pull.y;
-  if (!pull.on) {
-    if (dy > 8 && dy > Math.abs(dx) * 1.5) pull.on = true;           // 竖着往下拉才算
-    else { if (dy < -4 || Math.abs(dx) > 10) pull = null; return; }  // 往上滑、横着滑照常
-  }
-  e.preventDefault();
-  pull.d = Math.max(0, Math.min(110, dy * 0.5));  // 拉起来有阻力
-  setPull(pull.d);
-}, { passive: false });
-feed.addEventListener('touchend', () => {
-  if (!pull || !pull.on) { pull = null; return; }
-  const go = pull.d >= PULL_AT;
-  pull = null;
-  if (go) refresh(); else snapPull(0);
-}, { passive: true });
 
 async function refresh() {
   if (refreshing || state.loading) return;
   refreshing = true;
-  pullEl.classList.add('spin');
-  pullText.textContent = '正在刷新';
-  snapPull(feed.scrollTop <= 0 && feed.style.transform ? 50 : 0);
+  [...pullDots.children].forEach(x => { x.style.transform = ''; });
+  pullDots.classList.add('spin');
+  setPull(1, true);
+  if (offset > 0 || cur <= 0) goTo(0);  // 弹回去，两个点留在顶上转
   const oldSeed = state.seed;
   state.seed = Math.floor(Math.random() * 1e9);  // 推荐：换一批
   try {
-    const data = await fetchList(0, state.limit, state.q);
-    const fresh = data.items.filter(x => !seen.has(String(x.id))).length;
+    const [data] = await Promise.all([
+      fetchList(0, state.limit, state.q),
+      new Promise(r => setTimeout(r, 600)),  // 动画至少转一会儿，别一闪而过
+    ]);
     await loadMore(true, data);
-    if (fresh) toast(state.mode === 'new' ? `有 ${fresh} 条新视频` : `为你推荐了 ${fresh} 条新视频`);
-    else if (data.items.length) toast(state.mode === 'new' ? '暂时没有新视频' : '新视频都看完啦，换了一批');
   } catch {
     state.seed = oldSeed;
-    toast('刷新失败，检查一下网络');
+    toast('网络不给力，请稍后重试');
   } finally {
     refreshing = false;
-    pullEl.classList.remove('spin');
-    snapPull(0);
+    pullDots.classList.remove('spin');
+    setPull(0, true);
+    goTo(Math.max(0, cur));
   }
 }
 
@@ -626,10 +721,7 @@ document.addEventListener('keydown', e => {
   if (searchPage.classList.contains('show')) return;
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
-    const slides = [...feed.querySelectorAll('.slide')];
-    const cur = Math.round(feed.scrollTop / window.innerHeight);
-    const next = slides[Math.max(0, Math.min(slides.length - 1, cur + (e.key === 'ArrowDown' ? 1 : -1)))];
-    if (next) next.scrollIntoView({ behavior: 'smooth' });
+    if (!refreshing) goTo(cur + (e.key === 'ArrowDown' ? 1 : -1));
   }
   if (e.key === ' ' && currentVideo) { e.preventDefault(); if (currentVideo.paused) currentVideo.play().catch(() => {}); else currentVideo.pause(); }
 });
