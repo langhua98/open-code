@@ -74,7 +74,7 @@
   .slide.no-related .buffer-line{bottom:env(safe-area-inset-bottom)}
   .buffer-line::after{content:"";position:absolute;left:0;top:0;width:100%;height:100%;background:#fff;transform:scaleX(0);animation:bufLine .9s ease-out infinite}
   @keyframes bufLine{from{transform:scaleX(0);opacity:1}to{transform:scaleX(1);opacity:0}}
-  .slide.waiting .buffer-line{display:block}
+  .slide.waiting:not(.paused) .buffer-line{display:block}
   .slide.waiting .progress-track{opacity:0}
   .video-wrap{position:absolute;inset:0}
   .video-wrap video,.poster{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:transparent}
@@ -111,8 +111,12 @@
   .time-tip{position:absolute;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:8;font-size:22px;font-weight:700;text-shadow:0 1px 4px rgba(0,0,0,.8);display:none}
   .time-tip.show{display:block}
 
-  .play-indicator{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);opacity:0;pointer-events:none;transition:opacity .2s;z-index:6}
-  .play-indicator.show{opacity:.85}
+  /* 暂停时中间的大三角：跟着视频真的停没停走，出现时从大缩回来（照抖音） */
+  .play-indicator{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(1.4);opacity:0;pointer-events:none;transition:opacity .15s,transform .15s;z-index:6}
+  .slide.paused .play-indicator{opacity:.85;transform:translate(-50%,-50%) scale(1)}
+  .slide.paused .buffer-line{display:none}
+  /* 静音按钮：两种图标都在，按 body.muted 显示一个，所有视频的按钮永远一致 */
+  body.muted .mute-btn .when-on,body:not(.muted) .mute-btn .when-off{display:none}
   .heart-burst{position:absolute;transform:translate(-50%,-50%) scale(0);pointer-events:none;z-index:20;opacity:0}
   .heart-burst.animate{animation:heartPop .8s cubic-bezier(.17,.89,.32,1.49) forwards}
   @keyframes heartPop{0%{transform:translate(-50%,-50%) scale(0) rotate(-15deg);opacity:0}15%{opacity:1}35%{transform:translate(-50%,-50%) scale(1.15) rotate(-15deg)}100%{transform:translate(-50%,-80%) scale(1.3) rotate(-15deg);opacity:0}}
@@ -202,8 +206,33 @@ let state = { offset: 0, limit: 20, total: 0, q: '', mode: 'rec', loading: false
 const feed = document.getElementById('feed');
 const qInput = document.getElementById('qInput');
 
-// ── 声音：浏览器只让静音自动播，第一次碰屏幕时打开声音，之后都有声 ──
-let soundOn = false, soundJustOn = 0;
+// ── 声音 ──
+// 两件事分开记：
+//   unlocked  —— 这次打开页面后，浏览器准不准带声音播（要等手指第一次点屏幕，浏览器才放行）
+//   wantSound —— 你要不要声音（点右边的静音按钮切换，会记住）
+// 真正静不静音 = 没放行 或者 你不要声音。以前这两件事混在一个变量里：点了静音，下一次碰屏幕又被「解锁」成有声音
+let unlocked = false;
+let wantSound = store('want_sound') !== '0';
+const shouldMute = () => !(unlocked && wantSound);
+document.body.classList.add('muted');  // 一打开先是静音自动播
+// 播：按该不该静音来；带声音播被浏览器拦了（NotAllowedError，这个播放器没解锁过）就静音接着播，等下次碰屏幕再解锁。
+// 翻页时 play() 被打断（AbortError）是正常的，不当回事
+function playSafe(v) {
+  v.muted = shouldMute();
+  const p = v.play();
+  if (p) p.catch(err => {
+    if (!err || err.name !== 'NotAllowedError' || v.muted) return;
+    unlocked = false;
+    document.body.classList.add('muted');
+    v.muted = true;
+    v.play().catch(() => {});
+  });
+}
+function applyMute() {
+  const m = shouldMute();
+  document.body.classList.toggle('muted', m);
+  if (currentVideo) currentVideo.muted = m;  // 只动眼前这条；前后在热身的永远静音，免得冒一声
+}
 const ICON = {
   sound: `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><path d="M11 5 6 9H2v6h4l5 4V5z" fill="#fff"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>`,
   muted: `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><path d="M11 5 6 9H2v6h4l5 4V5z" fill="#fff"/><path d="m22 9-6 6M16 9l6 6"/></svg>`,
@@ -212,25 +241,34 @@ const ICON = {
   star: `<svg class="star" width="36" height="36" viewBox="0 0 24 24"><path d="m12 2.8 2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3L2.9 9.5l6.3-.9L12 2.8z" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/></svg>`,
   share: `<svg width="36" height="36" viewBox="0 0 24 24"><path d="M14 4.5v4C7.5 9 4 13 3 19.5c2.6-3.4 5.8-5 11-5v4l7-7-7-7z" fill="#fff"/></svg>`,
 };
-function setMute(btn, muted) {
-  btn.querySelector('.act-icon').innerHTML = muted ? ICON.muted : ICON.sound;
-  btn.querySelector('.act-label').textContent = muted ? '静音' : '声音';
-}
-function enableSound() {
-  if (soundOn) return;
-  soundOn = true;
-  soundJustOn = Date.now();  // 这一下只是开声音，不当成「点一下暂停」
-  // 苹果手机只让「被手指碰过时 play 过」的播放器带声音自动播：趁这一下把池子里的三个都解锁
-  // 解锁看的是「碰屏幕时调了 play」，跟当时静不静音无关：不在眼前的先静音着解锁，免得冒出一声
+// 手指碰屏幕时解锁：苹果手机只让「手指碰屏幕那一刻 play() 过」的播放器带声音播，趁这一下把池子里三个都 play 一遍。
+// 不在眼前的静音着 play 再停；眼前这条按你要不要声音来。浏览器不认这一下（比如只是滑动结束）就退回静音接着播，下次再试。
+// 只做解锁，不吞掉这次点击：点视频照样暂停，点按钮照样生效
+function unlock() {
+  if (unlocked) return;
+  const cv = currentVideo;
   POOL.forEach(v => {
-    v.muted = v !== currentVideo;
+    if (v === cv || !v.src) return;
+    v.muted = true;
     const p = v.play();
     if (p) p.then(() => { if (v !== currentVideo) v.pause(); }).catch(() => {});
   });
-  document.querySelectorAll('.slide .mute-btn').forEach(b => setMute(b, false));
+  if (!cv) return;
+  const wasPaused = cv.paused;
+  cv.muted = wasPaused || !wantSound;  // 你暂停着的，静音着解锁，别冒一声
+  const p = cv.play();
+  if (!p) return;
+  p.then(() => {
+    unlocked = true;
+    if (wasPaused && cv._slide && cv._slide._userPaused) cv.pause();  // 本来是你暂停的，解锁完还停着
+    applyMute();
+  }).catch(() => {
+    cv.muted = true;
+    if (wasPaused) cv.pause(); else cv.play().catch(() => {});
+  });
 }
-// 浏览器只认 touchend / pointerup / click / keydown 是「用户点过」，touchstart 不算，解锁不了声音
-['touchend', 'pointerup', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, enableSound, { passive: true }));
+// 浏览器只认 touchend / pointerup / click / keydown 是「用户点过」，touchstart 不算
+['touchend', 'pointerup', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, unlock, { passive: true }));
 
 // ── 顶部：在线状态、推荐/最新、搜索 ──
 const apiStatus = document.getElementById('apiStatus'), apiDot = document.getElementById('apiDot');
@@ -341,7 +379,7 @@ function createSlide(item) {
       <button class="act like-btn${liked.has(id) ? ' on' : ''}"><div class="act-icon">${ICON.heart}</div><div class="act-label">${liked.has(id) ? '已赞' : '赞'}</div></button>
       <button class="act comment-btn"><div class="act-icon">${ICON.comment}</div><div class="act-label">评论</div></button>
       <button class="act fav-btn${faved.has(id) ? ' on' : ''}"><div class="act-icon">${ICON.star}</div><div class="act-label">${faved.has(id) ? '已收藏' : '收藏'}</div></button>
-      <button class="act mute-btn"><div class="act-icon"></div><div class="act-label">声音</div></button>
+      <button class="act mute-btn"><div class="act-icon"><span class="when-on">${ICON.sound}</span><span class="when-off">${ICON.muted}</span></div><div class="act-label"><span class="when-on">声音</span><span class="when-off">静音</span></div></button>
       <button class="act share-btn"><div class="act-icon">${ICON.share}</div><div class="act-label">分享</div></button>
     </div>
     <div class="info">
@@ -357,10 +395,9 @@ function createSlide(item) {
   const $ = s => el.querySelector(s);
   const poster = $('.poster'), bar = $('.progress-bar'), wrap = $('.progress-wrap');
   const vid = () => el._video;  // 这一页现在借着的播放器（不在眼前的页没有）
-  const playInd = $('.play-indicator'), heart = $('.heart-burst'), timeTip = $('.time-tip');
+  const heart = $('.heart-burst'), timeTip = $('.time-tip');
   const likeBtn = $('.like-btn'), favBtn = $('.fav-btn'), muteBtn = $('.mute-btn'), caption = $('.caption'), more = $('.more');
 
-  setMute(muteBtn, !soundOn);
 
   // 文案超过两行才出「展开」
   requestAnimationFrame(() => { if (caption.scrollHeight > caption.clientHeight + 2) more.style.display = ''; });
@@ -376,6 +413,9 @@ function createSlide(item) {
 
   el._on = {
     playing: () => { poster.style.opacity = '0'; el.classList.remove('waiting'); },
+    // 暂停图标跟着视频真实状态：不管是点的、按空格、还是浏览器自己停的，都对得上
+    play: () => { el.classList.remove('paused'); },
+    pause: v => { if (v === currentVideo) el.classList.add('paused'); },
     waiting: v => { if (v === currentVideo) el.classList.add('waiting'); },
     canplay: () => { el.classList.remove('waiting'); },
     timeupdate: v => { if (v.duration) bar.style.width = (v.currentTime / v.duration * 100) + '%'; },
@@ -388,7 +428,7 @@ function createSlide(item) {
     const v = vid();
     if (!v) return;
     v.src = API.stream(item.id) + '?retry=' + Date.now();
-    if (v === currentVideo) v.play().catch(() => {});
+    if (v === currentVideo && !el._userPaused) playSafe(v);
   }
   el._on.error = v => {
     if (v.src.startsWith('blob:')) {
@@ -416,26 +456,32 @@ function createSlide(item) {
   wrap.addEventListener('pointerup', () => timeTip.classList.remove('show'));
   wrap.addEventListener('click', e => e.stopPropagation());
 
-  // 单击暂停/播放，双击点赞（心在点的地方冒出来）
+  // 单击暂停/播放，双击点赞（心在点的地方冒出来）。单击要等 250ms 看是不是双击，双击不会顺带暂停
   let lastTap = 0, tapTimer = null;
   el.addEventListener('click', e => {
-    if (e.target.closest('.actions,.info,.progress-wrap')) return;
-    if (Date.now() - soundJustOn < 800) return;
+    if (e.target.closest('.actions,.info,.progress-wrap,.slide-error')) return;
     const now = Date.now();
-    if (now - lastTap < 280) {
+    if (now - lastTap < 250) {
       clearTimeout(tapTimer);
+      lastTap = 0;  // 连点三下不算两次双击
       like(true, e.clientX, e.clientY);
-    } else {
-      tapTimer = setTimeout(togglePlay, 280);
+      return;
     }
     lastTap = now;
+    tapTimer = setTimeout(togglePlay, 250);
   });
   function togglePlay() {
     const v = vid();
-    if (!v) return;
-    if (v.paused) { v.play().catch(() => {}); playInd.classList.remove('show'); }
-    else { v.pause(); playInd.classList.add('show'); }
+    if (!v || v !== currentVideo) return;
+    if (v.paused) {
+      el._userPaused = false;
+      playSafe(v);
+    } else {
+      el._userPaused = true;
+      v.pause();
+    }
   }
+  el._toggle = togglePlay;
   function like(only, x, y) {
     const on = only ? true : !liked.has(id);
     if (on) liked.add(id); else liked.delete(id);
@@ -465,14 +511,13 @@ function createSlide(item) {
     if (navigator.share) navigator.share({ title: item.caption ? String(item.caption).slice(0, 40) : '小橘抖音', url }).catch(() => {});
     else if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => toast('链接已复制'));
   };
+  // 静音按钮：现在没声音就要声音，有声音就静音；记住你的选择。这一下本身就是「点过屏幕」，顺手解锁
   muteBtn.onclick = e => {
     e.stopPropagation();
-    const v = vid();
-    const muted = v ? !v.muted : soundOn;
-    if (v) v.muted = muted;
-    if (!muted) enableSound(); else soundOn = false;
-    POOL.forEach(x => { x.muted = muted; });
-    document.querySelectorAll('.slide .mute-btn').forEach(b => setMute(b, muted));
+    wantSound = shouldMute();
+    store('want_sound', wantSound ? '1' : '0');
+    if (wantSound && !unlocked) unlock();
+    applyMute();
   };
   return el;
 }
@@ -530,7 +575,7 @@ const POOL = [0, 1, 2].map(() => {
   v.setAttribute('webkit-playsinline', '');
   v.muted = true;
   v.preload = 'auto';
-  ['playing', 'timeupdate', 'error', 'waiting', 'canplay'].forEach(ev => v.addEventListener(ev, () => {
+  ['playing', 'timeupdate', 'error', 'waiting', 'canplay', 'play', 'pause'].forEach(ev => v.addEventListener(ev, () => {
     const s = v._slide;
     if (s && s._on && s._on[ev]) s._on[ev](v);
   }));
@@ -557,12 +602,10 @@ function activate(idx) {
   if (currentVideo && currentVideo !== video) currentVideo.pause();
   currentVideo = video;
   markSeen(slide.dataset.id);
-  video.muted = !soundOn;
-  setMute(slide.querySelector('.mute-btn'), video.muted);
+  slide._userPaused = false;  // 翻回来的视频接着播，跟抖音一样
+  slide.classList.remove('paused');
   if (video.readyState < 3) slide.classList.add('waiting');
-  // 万一还是被拦（没解锁过），先静音播着，别停在那儿等人点
-  video.play().catch(() => { video.muted = true; setMute(slide.querySelector('.mute-btn'), true); video.play().catch(() => {}); });
-  slide.querySelector('.play-indicator').classList.remove('show');
+  playSafe(video);
   if (idx >= state.items.length - 4 && state.items.length < state.total) loadMore();
 }
 // 预热：苹果手机不管 preload，暂停着的视频一个字节都不下，翻过去才开始加载，看着就像卡住了。
@@ -636,7 +679,7 @@ function blobReady(id, url) {
   if (!slide) return;
   if (idx === cur) {
     const v = slide._video;
-    if (v && v.readyState < 3) { v.src = url; v.play().catch(() => {}); }
+    if (v && v.readyState < 3) { v.src = url; if (!slide._userPaused) playSafe(v); }
   } else if (idx === cur + 1) {
     const v = lend(slide);
     if (v && v !== currentVideo) { if (v.src !== url) v.src = url; warm(slide); }
@@ -786,7 +829,7 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     goTo(cur + (e.key === 'ArrowDown' ? 1 : -1), true);
   }
-  if (e.key === ' ' && currentVideo) { e.preventDefault(); if (currentVideo.paused) currentVideo.play().catch(() => {}); else currentVideo.pause(); }
+  if (e.key === ' ' && currentVideo && currentVideo._slide) { e.preventDefault(); currentVideo._slide._toggle(); }
 });
 
 (async function init() {
