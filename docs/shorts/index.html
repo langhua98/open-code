@@ -42,7 +42,16 @@
   .chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
   .chip{font-size:13px;color:#ddd;background:#222;border-radius:999px;padding:6px 12px}
 
-  .feed{height:100vh;height:100dvh;width:100vw;overflow-y:scroll;overflow-x:hidden;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch}
+  .feed{height:100vh;height:100dvh;width:100vw;overflow-y:scroll;overflow-x:hidden;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain}
+  .feed.snap-back{transition:transform .3s ease}
+
+  /* 下拉刷新：在第一条视频往下拉，顶上「推荐/最新」换成刷新提示 —— 照抖音 */
+  .pull{position:fixed;top:0;left:0;right:0;z-index:49;display:flex;align-items:center;justify-content:center;gap:6px;
+    padding-top:max(16px, env(safe-area-inset-top));font-size:14px;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,.6);opacity:0;pointer-events:none}
+  .pull svg{filter:drop-shadow(0 1px 3px rgba(0,0,0,.6))}
+  .pull.spin svg{animation:spin .8s linear infinite}
+  .tabs{transition:opacity .2s}
+  body.pulling .tabs{opacity:0;pointer-events:none}
   .feed::-webkit-scrollbar{display:none}
   .slide{position:relative;height:100vh;height:100dvh;width:100vw;scroll-snap-align:start;scroll-snap-stop:always;background:#000;overflow:hidden}
   .video-wrap{position:absolute;inset:0}
@@ -130,6 +139,7 @@
   <div class="chips" id="historyChips"></div>
 </div>
 
+<div class="pull" id="pull"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg><span id="pullText">下拉刷新</span></div>
 <div class="feed" id="feed"></div>
 <div class="toast" id="toast"></div>
 <div id="soundTip">🔈 轻触屏幕开启声音</div>
@@ -157,6 +167,16 @@ function store(k, v) {
 }
 function storeSet(k) { try { return new Set(JSON.parse(store(k) || '[]')); } catch { return new Set(); } }
 const liked = storeSet('liked'), faved = storeSet('faved');
+// 看过的视频：刷新时没看过的排前面，刷到的尽量是新视频
+const seen = storeSet('seen');
+let seenSaveTimer = null;
+function markSeen(id) {
+  id = String(id);
+  if (seen.has(id)) return;
+  seen.add(id);
+  clearTimeout(seenSaveTimer);
+  seenSaveTimer = setTimeout(() => store('seen', JSON.stringify([...seen].slice(-3000))), 1000);
+}
 function saveSet(k, s) { store(k, JSON.stringify([...s].slice(-2000))); }
 
 let state = { offset: 0, limit: 20, total: 0, q: '', mode: 'rec', loading: false, items: [], seed: Math.floor(Math.random() * 1e9) };
@@ -207,7 +227,7 @@ document.getElementById('apiBadge').addEventListener('click', () => {
   location.reload();
 });
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
-  if (t.dataset.mode === state.mode && !state.q) return;
+  if (t.dataset.mode === state.mode && !state.q) { refresh(); return; }  // 再点一下当前的「推荐/最新」= 刷新
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
   state.mode = t.dataset.mode;
   state.seed = Math.floor(Math.random() * 1e9);
@@ -431,7 +451,7 @@ function createSlide(item) {
 }
 
 const observers = new Map();
-async function loadMore(reset = false) {
+async function loadMore(reset = false, prefetched = null) {
   if (state.loading) return;
   if (reset) {
     state.offset = 0; state.items = [];
@@ -442,9 +462,13 @@ async function loadMore(reset = false) {
   state.loading = true;
   showStatus();
   try {
-    const data = await fetchList(state.offset, state.limit, state.q);
+    const data = prefetched || await fetchList(state.offset, state.limit, state.q);
     state.total = data.total;
-    for (const item of data.items) {
+    let items = data.items;
+    if (state.mode === 'rec' && !state.q) {  // 推荐：这一批里没看过的排前面
+      items = [...items.filter(x => !seen.has(String(x.id))), ...items.filter(x => seen.has(String(x.id)))];
+    }
+    for (const item of items) {
       state.items.push(item);
       const slide = createSlide(item);
       slide.dataset.index = state.items.length - 1;
@@ -507,6 +531,7 @@ function observe(slide) {
       lend(feed.children[idx + 2]);
       if (currentVideo && currentVideo !== video) currentVideo.pause();
       currentVideo = video;
+      markSeen(slide.dataset.id);
       video.muted = !soundOn;
       setMute(slide.querySelector('.mute-btn'), video.muted);
       // 万一还是被拦（没解锁过），先静音播着，别停在那儿等人点
@@ -532,6 +557,70 @@ feed.addEventListener('touchend', e => {
   document.body.classList.toggle('clean', clean);
   toast(clean ? '已清屏，右滑恢复' : '已恢复');
 }, { passive: true });
+
+// ── 刷新：第一条视频往下拉，或者再点一下当前的「推荐/最新」 ──
+const pullEl = document.getElementById('pull'), pullText = document.getElementById('pullText');
+const PULL_AT = 60;  // 拉过这么多（px）松手就刷新
+let pull = null, refreshing = false;
+function setPull(d) {
+  feed.style.transform = d ? `translateY(${d}px)` : '';
+  pullEl.style.opacity = refreshing ? '1' : String(Math.min(1, d / 40));
+  if (!refreshing) {
+    pullEl.querySelector('svg').style.transform = `rotate(${Math.round(d / PULL_AT * 270)}deg)`;
+    pullText.textContent = d >= PULL_AT ? '松开刷新' : '下拉刷新';
+  }
+  document.body.classList.toggle('pulling', d > 0 || refreshing);
+}
+function snapPull(d) {
+  feed.classList.add('snap-back');
+  setPull(d);
+  setTimeout(() => feed.classList.remove('snap-back'), 300);
+}
+feed.addEventListener('touchstart', e => {
+  pull = feed.scrollTop <= 0 && !refreshing && !state.loading
+    ? { x: e.touches[0].clientX, y: e.touches[0].clientY, d: 0, on: false } : null;
+}, { passive: true });
+feed.addEventListener('touchmove', e => {
+  if (!pull) return;
+  const dx = e.touches[0].clientX - pull.x, dy = e.touches[0].clientY - pull.y;
+  if (!pull.on) {
+    if (dy > 8 && dy > Math.abs(dx) * 1.5) pull.on = true;           // 竖着往下拉才算
+    else { if (dy < -4 || Math.abs(dx) > 10) pull = null; return; }  // 往上滑、横着滑照常
+  }
+  e.preventDefault();
+  pull.d = Math.max(0, Math.min(110, dy * 0.5));  // 拉起来有阻力
+  setPull(pull.d);
+}, { passive: false });
+feed.addEventListener('touchend', () => {
+  if (!pull || !pull.on) { pull = null; return; }
+  const go = pull.d >= PULL_AT;
+  pull = null;
+  if (go) refresh(); else snapPull(0);
+}, { passive: true });
+
+async function refresh() {
+  if (refreshing || state.loading) return;
+  refreshing = true;
+  pullEl.classList.add('spin');
+  pullText.textContent = '正在刷新';
+  snapPull(feed.scrollTop <= 0 && feed.style.transform ? 50 : 0);
+  const oldSeed = state.seed;
+  state.seed = Math.floor(Math.random() * 1e9);  // 推荐：换一批
+  try {
+    const data = await fetchList(0, state.limit, state.q);
+    const fresh = data.items.filter(x => !seen.has(String(x.id))).length;
+    await loadMore(true, data);
+    if (fresh) toast(state.mode === 'new' ? `有 ${fresh} 条新视频` : `为你推荐了 ${fresh} 条新视频`);
+    else if (data.items.length) toast(state.mode === 'new' ? '暂时没有新视频' : '新视频都看完啦，换了一批');
+  } catch {
+    state.seed = oldSeed;
+    toast('刷新失败，检查一下网络');
+  } finally {
+    refreshing = false;
+    pullEl.classList.remove('spin');
+    snapPull(0);
+  }
+}
 
 document.addEventListener('keydown', e => {
   if (searchPage.classList.contains('show')) return;
