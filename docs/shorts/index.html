@@ -31,6 +31,12 @@
   .api-badge{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dim)}
   .dot{width:6px;height:6px;border-radius:50%;background:var(--accent2);box-shadow:0 0 6px var(--accent2)}
   .icon-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6))}
+  /* 右上角：「连播」开关 + 搜索。关着是半透明描边小胶囊，开了变成红色 */
+  .top-right{display:flex;align-items:center;gap:6px}
+  .auto-btn{display:flex;align-items:center;gap:4px;height:26px;padding:0 10px 0 8px;border-radius:13px;font-size:12px;font-weight:600;color:var(--dim);
+    background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.3);text-shadow:0 1px 2px rgba(0,0,0,.4);transition:background .2s,color .2s,border-color .2s}
+  .auto-btn svg{width:14px;height:14px}
+  .auto-btn.on{color:#fff;background:var(--accent);border-color:var(--accent);text-shadow:none}
 
   /* 搜索页：点放大镜才出来 */
   .search-page{position:fixed;inset:0;z-index:90;background:#111;display:none;flex-direction:column;
@@ -173,8 +179,11 @@
     <button class="tab on" data-mode="rec">推荐</button>
     <button class="tab" data-mode="new">最新</button>
   </div>
-  <button class="icon-btn" id="searchOpen" aria-label="搜索"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
-  <div class="top-loading"><div class="dy-loader spin"><i></i><i></i></div></div>
+  <div class="top-right">
+    <button class="auto-btn" id="autoBtn" aria-pressed="false" aria-label="自动连播"><svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M252,128a60,60,0,0,1-102.43,42.43l-.49-.53L89.22,102.31a36,36,0,1,0,0,51.38l3.08-3.48a12,12,0,1,1,18,15.91l-3.35,3.78-.49.53a60,60,0,1,1,0-84.86l.49.53,59.86,67.59a36,36,0,1,0,0-51.38l-3.08,3.48a12,12,0,1,1-18-15.91l3.35-3.78.49-.53A60,60,0,0,1,252,128Z"/></svg>连播</button>
+    <button class="icon-btn" id="searchOpen" aria-label="搜索"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+    <div class="top-loading"><div class="dy-loader spin"><i></i><i></i></div></div>
+  </div>
 </div>
 <div class="search-banner" id="searchBanner"><span id="searchBannerText"></span><button id="searchClear">清除</button></div>
 
@@ -487,7 +496,11 @@ function createSlide(item) {
     }
     const n = Number(el.dataset.retried || 0);
     if (n < 3) { el.dataset.retried = String(n + 1); setTimeout(() => { if (vid() === v) reloadVideo(); }, [2000, 8000, 20000][n]); }
-    else { errBox.classList.add('show'); el.classList.remove('waiting'); }
+    else {
+      errBox.classList.add('show');
+      el.classList.remove('waiting');
+      if (autoNext && v === currentVideo) setTimeout(() => { if (autoNext && currentVideo === v) autoAdvance(); }, 1500);  // 连播时跳过放不了的
+    }
   };
   errBox.addEventListener('click', e => { e.stopPropagation(); reloadVideo(); });
 
@@ -580,7 +593,7 @@ async function loadMore(reset = false, prefetched = null) {
     state.offset = 0; state.items = [];
     POOL.forEach(v => { v.pause(); v._slide = null; v.removeAttribute('src'); v.load(); });
     prefetchGen++; clearBlobs();
-    feed.innerHTML = ''; currentVideo = null; cur = -1;
+    feed.innerHTML = ''; currentVideo = null; cur = -1; advanceAfterLoad = false;
     feed.scrollTop = 0;
   }
   state.loading = true;
@@ -602,8 +615,10 @@ async function loadMore(reset = false, prefetched = null) {
     if (!state.items.length) showStatus(state.q ? `没搜到「${state.q}」相关的视频` : '还没有视频', true);
     else hideStatus();
     if (cur < 0 && state.items.length) goTo(0); else markNear();
+    if (advanceAfterLoad) { advanceAfterLoad = false; autoAdvance(); }
   } catch (e) {
     console.error(e);
+    advanceAfterLoad = false;
     if (state.items.length) toast('网络不给力，请稍后重试');
     else showStatus('网络不给力，轻点重试', true);
   } finally { state.loading = false; }
@@ -632,6 +647,7 @@ const POOL = [0, 1, 2].map(() => {
   // 现在：不是眼前这条的播放器，一开始播就静音，不是在热身的直接停掉；有人想给它开声音也立刻关回去
   v.addEventListener('play', () => { if (v !== currentVideo) { v.muted = true; if (!v._warming) v.pause(); } });
   v.addEventListener('volumechange', () => { if (v !== currentVideo && !v.muted) v.muted = true; });
+  v.addEventListener('ended', () => { if (v === currentVideo && autoNext) autoAdvance(); });  // 开着连播时不循环，播完会走到这里
   ['playing', 'timeupdate', 'error', 'waiting', 'canplay', 'play', 'pause'].forEach(ev => v.addEventListener(ev, () => {
     const s = v._slide;
     if (s && s._on && s._on[ev]) s._on[ev](v);
@@ -661,6 +677,7 @@ function activate(idx) {
   markSeen(slide.dataset.id);
   slide._userPaused = false;  // 翻回来的视频接着播，跟抖音一样
   slide.classList.remove('paused');
+  video.loop = !autoNext;
   if (video.readyState < 3) slide.classList.add('waiting');
   playSafe(video);
   if (idx >= state.items.length - 4 && state.items.length < state.total) loadMore();
@@ -863,6 +880,42 @@ feed.addEventListener('touchend', e => {
   document.body.classList.toggle('clean', clean);
   toast(clean ? '已清屏，右滑恢复' : '已恢复');
 }, { passive: true });
+
+// ── 自动连播（照抖音）：右上角「连播」打开后，视频不再循环，播完自动滑到下一条；开关记在本机 ──
+let autoNext = store('auto_next') === '1', advanceAfterLoad = false;
+const autoBtn = document.getElementById('autoBtn');
+function renderAuto() {
+  autoBtn.classList.toggle('on', autoNext);
+  autoBtn.setAttribute('aria-pressed', String(autoNext));
+  if (currentVideo) currentVideo.loop = !autoNext;  // 正在播的这条立刻生效
+}
+autoBtn.addEventListener('click', () => {
+  autoNext = !autoNext;
+  store('auto_next', autoNext ? '1' : '0');
+  renderAuto();
+  keepAwake(autoNext);
+  toast(autoNext ? '已开启自动连播' : '已关闭自动连播');
+});
+function autoAdvance() {
+  if (cur + 1 < feed.children.length) goTo(cur + 1, true);           // 平滑滑到下一条，跟手指滑一样
+  else if (state.items.length < state.total) { advanceAfterLoad = true; loadMore(); }  // 下一批还没来：来了接着滑
+  else if (currentVideo) { toast('没有更多视频了'); currentVideo.currentTime = 0; playSafe(currentVideo); }
+}
+renderAuto();
+// 连播时不让屏幕自己熄灭（浏览器支持才有：苹果 16.4+、安卓 Chrome）；切回页面时重新申请
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && navigator.wakeLock && document.visibilityState === 'visible') {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!on && wakeLock) {
+      const w = wakeLock; wakeLock = null; await w.release();
+    }
+  } catch { wakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(autoNext); });
+['touchend', 'click'].forEach(ev => document.addEventListener(ev, () => { if (autoNext && !wakeLock) keepAwake(true); }, { passive: true }));
 
 // ── 刷新：第一条视频往下拉，或者再点一下当前的「推荐/最新」；转圈的是右上角的两个点 ──
 async function refresh() {
