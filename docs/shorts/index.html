@@ -83,15 +83,37 @@
   .shade-bottom{position:absolute;left:0;right:0;bottom:0;height:45%;background:linear-gradient(0deg,rgba(0,0,0,.7),transparent);pointer-events:none}
 
   /* 右边一列：头像、赞、评论、收藏、声音、分享 */
-  .actions{position:absolute;right:8px;bottom:calc(120px + env(safe-area-inset-bottom));z-index:5;display:flex;flex-direction:column;align-items:center;gap:16px}
-  .act{display:flex;flex-direction:column;align-items:center;gap:3px;user-select:none}
-  .act svg{filter:drop-shadow(0 1px 3px rgba(0,0,0,.6));transition:transform .15s}
-  .act:active svg{transform:scale(.88)}
-  .act-label{font-size:12px;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,.8)}
-  .act.on .heart path{fill:var(--accent);stroke:var(--accent)}
-  .act.on .star path{fill:#ffc300;stroke:#ffc300}
-  .avatar{width:48px;height:48px;border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;position:relative;margin-bottom:8px}
-  .follow-plus{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);width:20px;height:20px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;line-height:1}
+  .actions{position:absolute;right:6px;bottom:calc(120px + env(safe-area-inset-bottom));z-index:5;display:flex;flex-direction:column;align-items:center;gap:14px}
+  /* 图标用 Phosphor Icons（MIT）的实心款：圆润、厚实，跟抖音一个路子。颜色走 currentColor，点亮时整颗变色；
+     阴影两层：一层贴边的淡实影 + 一层很淡的晕，白底视频上也看得清，又不像以前那样一圈黑边 */
+  .act{display:flex;flex-direction:column;align-items:center;gap:2px;user-select:none;-webkit-user-select:none;color:#fff}
+  .act-icon{position:relative;width:44px;height:40px;display:flex;align-items:center;justify-content:center;
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.28)) drop-shadow(0 0 8px rgba(0,0,0,.16));transition:transform .18s cubic-bezier(.3,1.5,.6,1)}
+  .act-icon svg{width:38px;height:38px;display:block;transition:color .2s}
+  .act:active .act-icon{transform:scale(.86)}
+  .act-label{font-size:12px;font-weight:500;letter-spacing:.3px;line-height:1.25;text-shadow:0 1px 2px rgba(0,0,0,.45)}
+  .like-btn.on .act-icon{color:var(--accent)}
+  .fav-btn.on .act-icon{color:#ffc300}
+  /* 点亮那一下：先缩小再弹大回来（照抖音），外面扩一圈同色的光圈；取消时轻轻一缩 */
+  .act.pop .act-icon svg{animation:actPop .42s cubic-bezier(.3,1.6,.5,1)}
+  @keyframes actPop{0%{transform:scale(.55)}55%{transform:scale(1.22)}100%{transform:scale(1)}}
+  .act.pop .act-icon::after{content:"";position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;
+    border:2px solid currentColor;opacity:0;animation:actRing .5s ease-out}
+  @keyframes actRing{0%{transform:scale(.4);opacity:.85}100%{transform:scale(1.5);opacity:0}}
+  .act.unpop .act-icon svg{animation:actUnpop .25s ease-out}
+  @keyframes actUnpop{40%{transform:scale(.8)}}
+  /* 头像：白边圆头像，下面红色「+」；点「+」转一圈变成白底红勾，再缩没（照抖音的关注动画） */
+  .avatar{width:48px;height:48px;border-radius:50%;border:1.5px solid #fff;display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:600;
+    position:relative;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+  .follow-plus{position:absolute;bottom:-10px;left:50%;width:20px;height:20px;margin-left:-10px;border-radius:50%;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center}
+  .follow-plus svg{width:12px;height:12px}
+  .follow-plus .ck,.author-btn.followed .follow-plus .pl{display:none}
+  .author-btn.followed .follow-plus .ck{display:block}
+  .author-btn.followed .follow-plus{animation:followed .9s forwards}
+  .author-btn.followed.done .follow-plus{display:none}
+  @keyframes followed{0%{transform:rotate(0) scale(1)}40%{transform:rotate(360deg) scale(1);background:#fff;color:var(--accent)}
+    75%{transform:rotate(360deg) scale(1);background:#fff;color:var(--accent)}100%{transform:rotate(360deg) scale(0);background:#fff;color:var(--accent)}}
 
   /* 左下：@作者、文案（#话题高亮，可点） */
   .info{position:absolute;left:0;right:76px;bottom:calc(46px + env(safe-area-inset-bottom));z-index:5;padding:0 12px 12px;display:flex;flex-direction:column;gap:6px}
@@ -117,9 +139,15 @@
   .slide.paused .buffer-line{display:none}
   /* 静音按钮：两种图标都在，按 body.muted 显示一个，所有视频的按钮永远一致 */
   body.muted .mute-btn .when-on,body:not(.muted) .mute-btn .when-off{display:none}
-  .heart-burst{position:absolute;transform:translate(-50%,-50%) scale(0);pointer-events:none;z-index:20;opacity:0}
-  .heart-burst.animate{animation:heartPop .8s cubic-bezier(.17,.89,.32,1.49) forwards}
-  @keyframes heartPop{0%{transform:translate(-50%,-50%) scale(0) rotate(-15deg);opacity:0}15%{opacity:1}35%{transform:translate(-50%,-50%) scale(1.15) rotate(-15deg)}100%{transform:translate(-50%,-80%) scale(1.3) rotate(-15deg);opacity:0}}
+  /* 双击的大红心：在点的地方从大往回一砸，随机歪一点，停一下再往上飘、变大、淡出（照抖音） */
+  .heart-burst{position:absolute;--rot:-12deg;transform:translate(-50%,-50%) scale(0);pointer-events:none;z-index:20;opacity:0;filter:drop-shadow(0 4px 10px rgba(254,44,85,.35))}
+  .heart-burst.animate{animation:heartPop .95s ease forwards}
+  @keyframes heartPop{
+    0%{transform:translate(-50%,-50%) rotate(var(--rot)) scale(1.7);opacity:0}
+    14%{transform:translate(-50%,-50%) rotate(var(--rot)) scale(.92);opacity:1}
+    26%{transform:translate(-50%,-50%) rotate(var(--rot)) scale(1)}
+    62%{transform:translate(-50%,-50%) rotate(var(--rot)) scale(1);opacity:1}
+    100%{transform:translate(-50%,-160%) rotate(var(--rot)) scale(1.9);opacity:0}}
   .slide-error{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:7;display:none;padding:10px 16px;border-radius:999px;background:rgba(0,0,0,.6);font-size:13px}
   .slide-error.show{display:block}
   .status{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--dim);z-index:40;text-align:center;padding:24px}
@@ -189,7 +217,13 @@ function store(k, v) {
   } catch { return ''; }
 }
 function storeSet(k) { try { return new Set(JSON.parse(store(k) || '[]')); } catch { return new Set(); } }
-const liked = storeSet('liked'), faved = storeSet('faved');
+const liked = storeSet('liked'), faved = storeSet('faved'), followed = storeSet('followed');
+// 点亮/取消时让按钮弹一下（重新加 class 才能重播动画）
+function bump(btn, on) {
+  btn.classList.remove('pop', 'unpop');
+  void btn.offsetWidth;
+  btn.classList.add(on ? 'pop' : 'unpop');
+}
 // 看过的视频：刷新时没看过的排前面，刷到的尽量是新视频
 const seen = storeSet('seen');
 let seenSaveTimer = null;
@@ -233,13 +267,19 @@ function applyMute() {
   document.body.classList.toggle('muted', m);
   if (currentVideo) currentVideo.muted = m;  // 只动眼前这条；前后在热身的永远静音，免得冒一声
 }
+// 图标：Phosphor Icons 实心款（https://phosphoricons.com，Copyright (c) 2023 Phosphor Icons，MIT License），
+// 256×256 画布，颜色跟着 currentColor
+const svg = d => `<svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="${d}"/></svg>`;
 const ICON = {
-  sound: `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><path d="M11 5 6 9H2v6h4l5 4V5z" fill="#fff"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>`,
-  muted: `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9"><path d="M11 5 6 9H2v6h4l5 4V5z" fill="#fff"/><path d="m22 9-6 6M16 9l6 6"/></svg>`,
-  heart: `<svg class="heart" width="38" height="38" viewBox="0 0 24 24"><path d="M12 21s-7.5-4.6-9.6-9.3C1 8.4 3 5 6.6 5c2.1 0 3.6 1.2 5.4 3.1C13.8 6.2 15.3 5 17.4 5 21 5 23 8.4 21.6 11.7 19.5 16.4 12 21 12 21z" fill="#fff" stroke="#fff" stroke-width="1"/></svg>`,
-  comment: `<svg width="36" height="36" viewBox="0 0 24 24"><path d="M12 3C6.5 3 2 6.8 2 11.5c0 2.6 1.4 4.9 3.6 6.5L5 21.5l4-2c.9.2 1.9.3 3 .3 5.5 0 10-3.8 10-8.5S17.5 3 12 3z" fill="#fff"/><circle cx="8" cy="11.5" r="1.2" fill="#555"/><circle cx="12" cy="11.5" r="1.2" fill="#555"/><circle cx="16" cy="11.5" r="1.2" fill="#555"/></svg>`,
-  star: `<svg class="star" width="36" height="36" viewBox="0 0 24 24"><path d="m12 2.8 2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3L2.9 9.5l6.3-.9L12 2.8z" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/></svg>`,
-  share: `<svg width="36" height="36" viewBox="0 0 24 24"><path d="M14 4.5v4C7.5 9 4 13 3 19.5c2.6-3.4 5.8-5 11-5v4l7-7-7-7z" fill="#fff"/></svg>`,
+  sound: svg('M160,32.25V223.69a8.29,8.29,0,0,1-3.91,7.18,8,8,0,0,1-9-.56l-65.57-51A4,4,0,0,1,80,176.16V79.84a4,4,0,0,1,1.55-3.15l65.57-51a8,8,0,0,1,10,.16A8.27,8.27,0,0,1,160,32.25ZM60,80H32A16,16,0,0,0,16,96v64a16,16,0,0,0,16,16H60a4,4,0,0,0,4-4V84A4,4,0,0,0,60,80Zm126.77,20.84a8,8,0,0,0-.72,11.3,24,24,0,0,1,0,31.72,8,8,0,1,0,12,10.58,40,40,0,0,0,0-52.88A8,8,0,0,0,186.74,100.84Zm40.89-26.17a8,8,0,1,0-11.92,10.66,64,64,0,0,1,0,85.34,8,8,0,1,0,11.92,10.66,80,80,0,0,0,0-106.66Z'),
+  muted: svg('M245.66,146.34a8,8,0,0,1-11.32,11.32L216,139.31l-18.34,18.35a8,8,0,0,1-11.32-11.32L204.69,128l-18.35-18.34a8,8,0,0,1,11.32-11.32L216,116.69l18.34-18.35a8,8,0,0,1,11.32,11.32L227.31,128ZM60,80H32A16,16,0,0,0,16,96v64a16,16,0,0,0,16,16H60a4,4,0,0,0,4-4V84A4,4,0,0,0,60,80Zm97.15-54.15a8,8,0,0,0-10-.16l-65.57,51A4,4,0,0,0,80,79.84v96.32a4,4,0,0,0,1.55,3.15l65.57,51a8,8,0,0,0,9,.56,8.29,8.29,0,0,0,3.91-7.18V32.25A8.27,8.27,0,0,0,157.12,25.85Z'),
+  heart: svg('M240,102c0,70-103.79,126.66-108.21,129a8,8,0,0,1-7.58,0C119.79,228.66,16,172,16,102A62.07,62.07,0,0,1,78,40c20.65,0,38.73,8.88,50,23.89C139.27,48.88,157.35,40,178,40A62.07,62.07,0,0,1,240,102Z'),
+  comment: svg('M128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24ZM84,140a12,12,0,1,1,12-12A12,12,0,0,1,84,140Zm44,0a12,12,0,1,1,12-12A12,12,0,0,1,128,140Zm44,0a12,12,0,1,1,12-12A12,12,0,0,1,172,140Z'),
+  star: svg('M234.29,114.85l-45,38.83L203,211.75a16.4,16.4,0,0,1-24.5,17.82L128,198.49,77.47,229.57A16.4,16.4,0,0,1,53,211.75l13.76-58.07-45-38.83A16.46,16.46,0,0,1,31.08,86l59-4.76,22.76-55.08a16.36,16.36,0,0,1,30.27,0l22.75,55.08,59,4.76a16.46,16.46,0,0,1,9.37,28.86Z'),
+  share: svg('M237.66,117.66l-80,80A8,8,0,0,1,144,192V152.23c-57.1,3.24-96.25,40.27-107.24,52h0a12,12,0,0,1-20.68-9.58c3.71-32.26,21.38-63.29,49.76-87.37,23.57-20,52.22-32.69,78.16-34.91V32a8,8,0,0,1,13.66-5.66l80,80A8,8,0,0,1,237.66,117.66Z'),
+  plus: svg('M228,128a12,12,0,0,1-12,12H140v76a12,12,0,0,1-24,0V140H40a12,12,0,0,1,0-24h76V40a12,12,0,0,1,24,0v76h76A12,12,0,0,1,228,128Z'),
+  check: svg('M232.49,80.49l-128,128a12,12,0,0,1-17,0l-56-56a12,12,0,1,1,17-17L96,183,215.51,63.51a12,12,0,0,1,17,17Z'),
+  play: svg('M240,128a15.74,15.74,0,0,1-7.6,13.51L88.32,229.65a16,16,0,0,1-16.2.3A15.86,15.86,0,0,1,64,216.13V39.87a15.86,15.86,0,0,1,8.12-13.82,16,16,0,0,1,16.2.3L232.4,114.49A15.74,15.74,0,0,1,240,128Z'),
 };
 // 手指碰屏幕时解锁：苹果手机只让「手指碰屏幕那一刻 play() 过」的播放器带声音播，趁这一下把池子里三个都 play 一遍。
 // 不在眼前的静音着 play 再停；眼前这条按你要不要声音来。浏览器不认这一下（比如只是滑动结束）就退回静音接着播，下次再试。
@@ -371,11 +411,11 @@ function createSlide(item) {
       <div class="shade-top"></div><div class="shade-bottom"></div>
     </div>
     <div class="slide-error">视频加载失败，轻点重试</div>
-    <div class="play-indicator"><svg width="70" height="70" viewBox="0 0 24 24" fill="rgba(255,255,255,.85)"><path d="M8 5.14v14l11-7-11-7z"/></svg></div>
-    <div class="heart-burst"><svg width="96" height="96" viewBox="0 0 24 24"><path d="M12 21s-7.5-4.6-9.6-9.3C1 8.4 3 5 6.6 5c2.1 0 3.6 1.2 5.4 3.1C13.8 6.2 15.3 5 17.4 5 21 5 23 8.4 21.6 11.7 19.5 16.4 12 21 12 21z" fill="#fe2c55"/></svg></div>
+    <div class="play-indicator"><svg width="64" height="64" viewBox="0 0 256 256" fill="rgba(255,255,255,.72)"><path d="M240,128a15.74,15.74,0,0,1-7.6,13.51L88.32,229.65a16,16,0,0,1-16.2.3A15.86,15.86,0,0,1,64,216.13V39.87a15.86,15.86,0,0,1,8.12-13.82,16,16,0,0,1,16.2.3L232.4,114.49A15.74,15.74,0,0,1,240,128Z"/></svg></div>
+    <div class="heart-burst"><svg width="100" height="100" viewBox="0 0 256 256"><defs><linearGradient id="hb${escapeHtml(id)}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff6b8b"/><stop offset="1" stop-color="#fe2c55"/></linearGradient></defs><path fill="url(#hb${escapeHtml(id)})" d="M240,102c0,70-103.79,126.66-108.21,129a8,8,0,0,1-7.58,0C119.79,228.66,16,172,16,102A62.07,62.07,0,0,1,78,40c20.65,0,38.73,8.88,50,23.89C139.27,48.88,157.35,40,178,40A62.07,62.07,0,0,1,240,102Z"/></svg></div>
     <div class="time-tip"></div>
     <div class="actions">
-      <button class="act author-btn"><div class="avatar" style="background:${avatarColor(author)}">${escapeHtml([...author][0] || '橘')}<div class="follow-plus">+</div></div></button>
+      <button class="act author-btn${followed.has(author) ? ' followed done' : ''}"><div class="avatar" style="background:${avatarColor(author)}">${escapeHtml([...author][0] || '橘')}<div class="follow-plus"><span class="pl">${ICON.plus}</span><span class="ck">${ICON.check}</span></div></div></button>
       <button class="act like-btn${liked.has(id) ? ' on' : ''}"><div class="act-icon">${ICON.heart}</div><div class="act-label">${liked.has(id) ? '已赞' : '赞'}</div></button>
       <button class="act comment-btn"><div class="act-icon">${ICON.comment}</div><div class="act-label">评论</div></button>
       <button class="act fav-btn${faved.has(id) ? ' on' : ''}"><div class="act-icon">${ICON.star}</div><div class="act-label">${faved.has(id) ? '已收藏' : '收藏'}</div></button>
@@ -409,7 +449,21 @@ function createSlide(item) {
     else if (more.style.display !== 'none') more.click();
   });
   $('.author').onclick = e => { e.stopPropagation(); if (item.author) search(item.author); };
-  $('.author-btn').onclick = e => { e.stopPropagation(); if (item.author) search(item.author); else toast('这条视频没有作者信息'); };
+  $('.author-btn').onclick = e => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    // 点头像下面的「+」= 关注（记在本机）；点头像本身 = 看这个作者的视频
+    if (e.target.closest('.follow-plus') && !btn.classList.contains('followed')) {
+      if (!item.author) { toast('这条视频没有作者信息'); return; }
+      followed.add(author);
+      saveSet('followed', followed);
+      document.querySelectorAll('.author-btn').forEach(b => { if (b.closest('.slide')?._author === author) b.classList.add('followed'); });
+      toast('已关注');
+      return;
+    }
+    if (item.author) search(item.author); else toast('这条视频没有作者信息');
+  };
+  el._author = author;
 
   el._on = {
     playing: () => { poster.style.opacity = '0'; el.classList.remove('waiting'); },
@@ -486,11 +540,13 @@ function createSlide(item) {
     const on = only ? true : !liked.has(id);
     if (on) liked.add(id); else liked.delete(id);
     saveSet('liked', liked);
+    if (likeBtn.classList.contains('on') !== on) bump(likeBtn, on);  // 双击已赞的不再弹
     likeBtn.classList.toggle('on', on);
     likeBtn.querySelector('.act-label').textContent = on ? '已赞' : '赞';
     if (x != null) {
       heart.style.left = x + 'px';
       heart.style.top = y + 'px';
+      heart.style.setProperty('--rot', `${Math.round(Math.random() * 40 - 20)}deg`);  // 每次歪的角度不一样
       heart.classList.remove('animate'); void heart.offsetWidth; heart.classList.add('animate');
     }
   }
@@ -500,6 +556,7 @@ function createSlide(item) {
     const on = !faved.has(id);
     if (on) faved.add(id); else faved.delete(id);
     saveSet('faved', faved);
+    bump(favBtn, on);
     favBtn.classList.toggle('on', on);
     favBtn.querySelector('.act-label').textContent = on ? '已收藏' : '收藏';
     toast(on ? '已收藏' : '取消收藏');
