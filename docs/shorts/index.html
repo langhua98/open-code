@@ -207,6 +207,9 @@
 <script>
 /** 视频服务地址：页面就在视频服务上时用同一个地址；也可以 ?api=https://xxx.workers.dev 指定一次（会记住） */
 const qs = new URLSearchParams(location.search);
+// 排查用：?debug=1 左上角显示播放器状态；?noblob=1 不预先整条下载到内存，全走网络播
+const BUILD = '2026-10-09', DEBUG = qs.get('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
+const STATS = { made: 0, srcs: 0, heals: 0, errors: [] };
 if (qs.get('api')) localStorage.setItem('worker_base', qs.get('api').replace(/\/$/, ''));
 const SAME_ORIGIN = /workers\.dev$/.test(location.hostname) ? location.origin : '';
 const WORKER_BASE = (qs.get('api') || store('worker_base') || SAME_ORIGIN || 'https://xiaoju-shorts.langhua98.workers.dev').replace(/\/$/, '');
@@ -476,32 +479,43 @@ function createSlide(item) {
     pause: v => { if (v === currentVideo) el.classList.add('paused'); },
     waiting: v => { if (v === currentVideo) el.classList.add('waiting'); },
     canplay: () => { el.classList.remove('waiting'); },
-    timeupdate: v => { if (v.duration) bar.style.width = (v.currentTime / v.duration * 100) + '%'; },
+    timeupdate: v => {
+      if (v.duration) bar.style.width = (v.currentTime / v.duration * 100) + '%';
+      if (el.dataset.retried !== '0' && v.currentTime > el._failAt + 2) el.dataset.retried = '0';  // 越过出错的地方接着播了，重试次数清零
+    },
   };
 
-  // 第一次播放时视频服务要先去 Telegram 换文件号，偶尔超时或被限流：自动重试三次，再不行让人点一下
+  // 第一次播放时视频服务要先去 Telegram 换文件号，偶尔超时或被限流；播到一半某次分段请求也可能失败。
+  // 自动重试，从出错的地方接着播（以前是从头播）；同一个地方连着三次都过不去，才让人点一下
   const errBox = $('.slide-error');
   function reloadVideo() {
     errBox.classList.remove('show');
     const v = vid();
     if (!v) return;
-    v.src = API.stream(item.id) + '?retry=' + Date.now();
+    el._stale = false;
+    setSrcKeep(v, API.stream(item.id) + '?retry=' + Date.now());
     if (v === currentVideo && !el._userPaused) playSafe(v);
   }
-  el._on.error = v => {
+  el._reload = reloadVideo;
+  el._failAt = 0;
+  el._fail = v => {
     if (v.src.startsWith('blob:')) {
       if (blobUrl(item.id) === v.src) { blobFails++; dropBlob(String(item.id)); }  // 不是我们自己扔掉的才算这台手机放不了
       reloadVideo();
       return;
     }
+    // 不在眼前的（预热中的下一条）出错不算次数，翻到它时再重新加载。以前预热时就把三次用光了，一翻过去第一次出错就被连播跳过
+    if (v !== currentVideo) { el._stale = true; return; }
     const n = Number(el.dataset.retried || 0);
-    if (n < 3) { el.dataset.retried = String(n + 1); setTimeout(() => { if (vid() === v) reloadVideo(); }, [2000, 8000, 20000][n]); }
+    el._failAt = v.currentTime;
+    if (n < 3) { el.dataset.retried = String(n + 1); setTimeout(() => { if (vid() === v && (v.error || v.ended)) reloadVideo(); }, [2000, 8000, 20000][n]); }  // 等的时候已经好了（比如换成了内存里的）就不动
     else {
       errBox.classList.add('show');
       el.classList.remove('waiting');
-      if (autoNext && v === currentVideo) setTimeout(() => { if (autoNext && currentVideo === v) autoAdvance(); }, 1500);  // 连播时跳过放不了的
+      if (autoNext) setTimeout(() => { if (autoNext && currentVideo === v && errBox.classList.contains('show')) autoAdvance(); }, 1500);  // 连播时跳过放不了的
     }
   };
+  el._on.error = el._fail;
   errBox.addEventListener('click', e => { e.stopPropagation(); reloadVideo(); });
 
   // 进度条：点或拖，拖的时候中间显示时间
@@ -593,7 +607,7 @@ async function loadMore(reset = false, prefetched = null) {
     state.offset = 0; state.items = [];
     POOL.forEach(v => { v.pause(); v._slide = null; v.removeAttribute('src'); v.load(); });
     prefetchGen++; clearBlobs();
-    feed.innerHTML = ''; currentVideo = null; cur = -1; advanceAfterLoad = false;
+    feed.innerHTML = ''; currentVideo = null; cur = -1; advanceFrom = -1;
     feed.scrollTop = 0;
   }
   state.loading = true;
@@ -615,10 +629,10 @@ async function loadMore(reset = false, prefetched = null) {
     if (!state.items.length) showStatus(state.q ? `没搜到「${state.q}」相关的视频` : '还没有视频', true);
     else hideStatus();
     if (cur < 0 && state.items.length) goTo(0); else markNear();
-    if (advanceAfterLoad) { advanceAfterLoad = false; autoAdvance(); }
+    if (advanceFrom >= 0) { const from = advanceFrom; advanceFrom = -1; if (cur === from && autoNext) autoAdvance(); }  // 等的时候自己滑走了就不跳
   } catch (e) {
     console.error(e);
-    advanceAfterLoad = false;
+    advanceFrom = -1;
     if (state.items.length) toast('网络不给力，请稍后重试');
     else showStatus('网络不给力，轻点重试', true);
   } finally { state.loading = false; }
@@ -634,8 +648,9 @@ function hideStatus() { const s = document.getElementById('global-status'); if (
 // 播放器池：只有三个 <video>，眼前这页和后面两页轮着用（第 i 页用第 i % 3 个）。
 // 苹果手机上播放器要被手指「解锁」过才能带声音自动播，每页一个新播放器的话第二页就得再点一下
 let currentVideo = null;
-const POOL = [0, 1, 2].map(() => {
+function makeVideo() {
   const v = document.createElement('video');
+  STATS.made++;
   v.loop = true;
   v.playsInline = true;
   v.setAttribute('playsinline', '');
@@ -647,13 +662,34 @@ const POOL = [0, 1, 2].map(() => {
   // 现在：不是眼前这条的播放器，一开始播就静音，不是在热身的直接停掉；有人想给它开声音也立刻关回去
   v.addEventListener('play', () => { if (v !== currentVideo) { v.muted = true; if (!v._warming) v.pause(); } });
   v.addEventListener('volumechange', () => { if (v !== currentVideo && !v.muted) v.muted = true; });
-  v.addEventListener('ended', () => { if (v === currentVideo && autoNext) autoAdvance(); });  // 开着连播时不循环，播完会走到这里
+  // 开着连播时不循环，播完会走到这里。离结尾还远就「结束」了（数据没下全之类），当出错处理，从断的地方接着播，不往下翻
+  v.addEventListener('ended', () => {
+    if (v !== currentVideo || !autoNext) return;
+    if (isFinite(v.duration) && v.currentTime < v.duration - 1 && v._slide) v._slide._fail(v);
+    else autoAdvance();
+  });
+  // 换了地址（重试、换成内存里的）之后跳回原来播到的地方
+  v.addEventListener('loadedmetadata', () => {
+    const t = v._resumeAt;
+    v._resumeAt = 0;
+    if (t && v.duration) v.currentTime = Math.min(t, v.duration - 0.1);
+  });
   ['playing', 'timeupdate', 'error', 'waiting', 'canplay', 'play', 'pause'].forEach(ev => v.addEventListener(ev, () => {
     const s = v._slide;
+    if (DEBUG && ev === 'error') STATS.errors = [...STATS.errors.slice(-2), `#${s && s.dataset.index} e${v.error && v.error.code} @${v.currentTime.toFixed(1)}`];
     if (s && s._on && s._on[ev]) s._on[ev](v);
   }));
+  // 记下画面真正画出来的最后一帧（给下面的「画面卡死」检查用）
+  if (HAS_RVFC) {
+    const onFrame = (now, meta) => { v._frameT = meta.mediaTime; v.requestVideoFrameCallback(onFrame); };
+    v.requestVideoFrameCallback(onFrame);
+    v.addEventListener('loadstart', () => { v._frameT = -1; });
+    ['playing', 'seeked'].forEach(ev => v.addEventListener(ev, () => { v._playT = v.currentTime; }));
+  }
   return v;
-});
+}
+const HAS_RVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+const POOL = [0, 1, 2].map(makeVideo);
 function lend(slide) {
   if (!slide || !slide.classList.contains('slide')) return null;
   const v = POOL[Number(slide.dataset.index) % POOL.length];
@@ -662,11 +698,50 @@ function lend(slide) {
     v._slide = slide;
     slide._video = v;
     slide.dataset.retried = '0';
+    slide._stale = false;
+    slide._healed = false;
+    v._resumeAt = 0;
     slide.querySelector('.video-wrap').insertBefore(v, slide.querySelector('.shade-top'));
     v.poster = API.thumb(slide.dataset.id);
     v.src = blobUrl(slide.dataset.id) || API.stream(slide.dataset.id);
+    STATS.srcs++;
   }
   return v;
+}
+// 画面卡死自救：苹果手机（Safari 和 iPhone 上的 Chrome 都是苹果的内核）快速连刷之后，播放器偶尔只剩声音在走，
+// 画面停在封面上，之后的视频也一样，刷新页面才好。眼前这条声音走了 2.5 秒还一帧都没画出来，就扔掉这个播放器，
+// 换一个新的从原来的位置接着播——等于只给这一个播放器「刷新」一下。每条视频最多换一次，免得来回折腾
+function replaceVideo(old) {
+  const i = POOL.indexOf(old), slide = old._slide;
+  if (i < 0 || !slide) return;
+  const t = old.currentTime, wasCurrent = old === currentVideo;
+  old.pause();
+  old._slide = null;
+  slide._video = null;
+  old.remove();
+  old.removeAttribute('src');
+  old.load();  // 立刻把旧播放器占着的解码资源放掉
+  STATS.heals++;
+  const v = POOL[i] = makeVideo();
+  lend(slide);
+  slide._healed = true;  // lend 会清掉，这里再记上
+  v._resumeAt = t > 0.5 ? t : 0;
+  if (!wasCurrent) return;
+  currentVideo = v;
+  v.loop = !autoNext;
+  if (!slide._userPaused) playSafe(v);
+}
+if (HAS_RVFC) setInterval(() => {
+  const v = currentVideo, slide = v && v._slide;
+  if (!slide || slide._healed || v.paused || v.readyState < 3 || document.visibilityState !== 'visible') return;
+  if (v.currentTime - Math.max(v._frameT ?? -1, v._playT ?? 0) > 2.5) replaceVideo(v);
+}, 1000);
+// 换播放地址但保留进度：重试、换成内存里的那份时用，不然会从头播
+function setSrcKeep(v, url) {
+  const t = v.currentTime;
+  v.src = url;
+  STATS.srcs++;
+  v._resumeAt = t > 0.5 ? t : 0;
 }
 function activate(idx) {
   const slide = feed.children[idx];
@@ -678,6 +753,7 @@ function activate(idx) {
   slide._userPaused = false;  // 翻回来的视频接着播，跟抖音一样
   slide.classList.remove('paused');
   video.loop = !autoNext;
+  if (slide._stale) slide._reload();  // 预热时出过错的，翻到了重新加载
   if (video.readyState < 3) slide.classList.add('waiting');
   playSafe(video);
   if (idx >= state.items.length - 4 && state.items.length < state.total) loadMore();
@@ -706,7 +782,7 @@ const AHEAD = 2, PREFETCH_MAX = 15 * 1024 * 1024;
 const blobs = new Map();  // 视频 id -> { url, ctrl }；url 为空表示还在下
 let blobFails = 0, prefetchGen = 0, prefetchTimer = 0;
 const blobUrl = id => (blobs.get(String(id)) || {}).url || '';
-const canPrefetch = item => !!item && blobFails < 2 && !(item.size > PREFETCH_MAX);
+const canPrefetch = item => !!item && !NO_BLOB && blobFails < 2 && !(item.size > PREFETCH_MAX);
 function dropBlob(id) {
   const b = blobs.get(id);
   if (!b) return;
@@ -759,7 +835,7 @@ function blobReady(id, url) {
   if (!slide) return;
   if (idx === cur) {
     const v = slide._video;
-    if (v && v.readyState < 3) { v.src = url; if (!slide._userPaused) playSafe(v); }
+    if (v && v.readyState < 3) { setSrcKeep(v, url); if (!slide._userPaused) playSafe(v); }
   } else if (idx === cur + 1) {
     const v = lend(slide);
     if (v && v !== currentVideo) { if (v.src !== url) v.src = url; warm(slide); }
@@ -882,7 +958,7 @@ feed.addEventListener('touchend', e => {
 }, { passive: true });
 
 // ── 自动连播（照抖音）：右上角「连播」打开后，视频不再循环，播完自动滑到下一条；开关记在本机 ──
-let autoNext = store('auto_next') === '1', advanceAfterLoad = false;
+let autoNext = store('auto_next') === '1', advanceFrom = -1;  // advanceFrom：在第几条播完时等下一批
 const autoBtn = document.getElementById('autoBtn');
 function renderAuto() {
   autoBtn.classList.toggle('on', autoNext);
@@ -898,7 +974,7 @@ autoBtn.addEventListener('click', () => {
 });
 function autoAdvance() {
   if (cur + 1 < feed.children.length) goTo(cur + 1, true);           // 平滑滑到下一条，跟手指滑一样
-  else if (state.items.length < state.total) { advanceAfterLoad = true; loadMore(); }  // 下一批还没来：来了接着滑
+  else if (state.items.length < state.total) { advanceFrom = cur; loadMore(); }  // 下一批还没来：来了接着滑
   else if (currentVideo) { toast('没有更多视频了'); currentVideo.currentTime = 0; playSafe(currentVideo); }
 }
 renderAuto();
@@ -952,6 +1028,24 @@ document.addEventListener('keydown', e => {
   try { const h = await fetch(API.health()); if (h.ok) setStatus(true, '云在线'); } catch { /* fetchList 里再判 */ }
   loadMore(true);
 })();
+// ── 调试面板（?debug=1）：卡住的时候截图发过来，看是解码、加载还是内存的问题 ──
+if (DEBUG) {
+  const box = document.createElement('pre');
+  box.style.cssText = 'position:fixed;left:6px;top:56px;z-index:99;margin:0;padding:6px 8px;max-width:72vw;font:11px/1.35 ui-monospace,Menlo,monospace;color:#0f0;background:rgba(0,0,0,.7);border-radius:6px;pointer-events:none;white-space:pre-wrap';
+  document.body.appendChild(box);
+  setInterval(() => {
+    const v = currentVideo, q = v && v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality() : null;
+    const nb = blobs.size;
+    box.textContent = [
+      `build ${BUILD}${NO_BLOB ? ' noblob' : ''}  第${cur + 1}条 id=${v && v._slide ? v._slide.dataset.id : '-'}`,
+      v ? `src=${v.src.slice(0, 5)} rs=${v.readyState} ns=${v.networkState} ${v.paused ? '暂停' : '播放'}${v.muted ? ' 静音' : ''}` : 'no video',
+      v ? `时间 ${v.currentTime.toFixed(1)}/${(v.duration || 0).toFixed(1)}  画面 ${v.videoWidth}x${v.videoHeight}` : '',
+      v ? `解码帧 ${q ? q.totalVideoFrames : '?'} 丢 ${q ? q.droppedVideoFrames : '?'}  上一帧@${v._frameT == null ? '?' : v._frameT.toFixed(1)}` : '',
+      `播放器 建${STATS.made} 换源${STATS.srcs} 自救${STATS.heals}  内存视频${nb} blobFails=${blobFails}`,
+      `出错 ${STATS.errors.join(' | ') || '无'}`,
+    ].join('\n');
+  }, 500);
+}
 </script>
 </body>
 </html>
