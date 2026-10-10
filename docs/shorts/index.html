@@ -238,7 +238,7 @@
 /** 视频服务地址：页面就在视频服务上时用同一个地址；也可以 ?api=https://xxx.workers.dev 指定一次（会记住） */
 const qs = new URLSearchParams(location.search);
 // 排查用：?debug=1 左上角显示播放器状态；?noblob=1 不预先整条下载到内存，全走网络播
-const BUILD = '2026-10-10c', DEBUG = qs.get('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
+const BUILD = '2026-10-10d', DEBUG = qs.get('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
 const STATS = { made: 0, srcs: 0, heals: 0, errors: [] };
 if (qs.get('api')) localStorage.setItem('worker_base', qs.get('api').replace(/\/$/, ''));
 const SAME_ORIGIN = /workers\.dev$/.test(location.hostname) ? location.origin : '';
@@ -858,6 +858,18 @@ function replaceVideo(old) {
   v.loop = !autoNext;
   if (!slide._userPaused) playSafe(v);
 }
+// 苹果内核：开着调试面板（?debug=1，每半秒改一次字、读一次播放状态）怎么刷都不卡，关掉刷十几条就只剩声音、画面停住。
+// 页面上一直有东西在变，视频画面才会接着往屏幕上画。这里照着做：播放时每半秒改一下角落里一个看不见的小字、读一次播放状态
+const keepPaint = document.createElement('pre');
+keepPaint.setAttribute('aria-hidden', 'true');
+keepPaint.style.cssText = 'position:fixed;left:0;bottom:0;width:1px;height:1px;margin:0;overflow:hidden;font-size:1px;line-height:1px;opacity:.01;pointer-events:none;z-index:99';
+document.body.appendChild(keepPaint);
+setInterval(() => {
+  const v = currentVideo;
+  if (!v || v.paused || document.visibilityState !== 'visible') return;
+  keepPaint.textContent = v.currentTime.toFixed(1);
+  if (v.getVideoPlaybackQuality) v.getVideoPlaybackQuality();
+}, 500);
 if (HAS_RVFC) setInterval(() => {
   const v = currentVideo, slide = v && v._slide;
   if (!slide || slide._healed || v.paused || v.readyState < 3 || document.visibilityState !== 'visible') return;
