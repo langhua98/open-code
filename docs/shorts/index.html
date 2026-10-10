@@ -208,7 +208,7 @@
 /** 视频服务地址：页面就在视频服务上时用同一个地址；也可以 ?api=https://xxx.workers.dev 指定一次（会记住） */
 const qs = new URLSearchParams(location.search);
 // 排查用：?debug=1 左上角显示播放器状态；?noblob=1 不预先整条下载到内存，全走网络播
-const BUILD = '2026-10-09', DEBUG = qs.get('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
+const BUILD = '2026-10-10', DEBUG = qs.get('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
 const STATS = { made: 0, srcs: 0, heals: 0, errors: [] };
 if (qs.get('api')) localStorage.setItem('worker_base', qs.get('api').replace(/\/$/, ''));
 const SAME_ORIGIN = /workers\.dev$/.test(location.hostname) ? location.origin : '';
@@ -410,7 +410,9 @@ function createSlide(item) {
   el.dataset.id = item.id;
   const author = item.author || '小橘抖音';
   el.classList.add('no-related');
-  const meta = [item.duration ? fmtTime(item.duration) : '', item.date ? String(item.date).slice(0, 10) : ''].filter(Boolean).join(' · ');
+  // 日期是原视频在抖音/快手发的那天；老视频没记着，退回转进频道那天
+  const day = item.created ? new Date(item.created * 1000).toLocaleDateString('sv') : item.date ? String(item.date).slice(0, 10) : '';
+  const meta = [item.duration ? fmtTime(item.duration) : '', day].filter(Boolean).join(' · ');
   const id = String(item.id);
   el.innerHTML = `
     <div class="video-wrap">
@@ -455,7 +457,13 @@ function createSlide(item) {
     if (t) search(t.dataset.q);
     else if (more.style.display !== 'none') more.click();
   });
-  $('.author').onclick = e => { e.stopPropagation(); if (item.author) search(item.author); };
+  // 点作者名：去作者的抖音/快手主页；没记着主页的老视频照旧按作者搜。点头像还是看这个作者在这里的视频
+  const authorUrl = /^https:\/\/www\.(douyin|kuaishou)\.com\//.test(item.author_url || '') ? item.author_url : '';
+  $('.author').onclick = e => {
+    e.stopPropagation();
+    if (authorUrl) window.open(authorUrl, '_blank', 'noopener');
+    else if (item.author) search(item.author);
+  };
   $('.author-btn').onclick = e => {
     e.stopPropagation();
     const btn = e.currentTarget;
