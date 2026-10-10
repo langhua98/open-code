@@ -208,7 +208,7 @@
 /** 视频服务地址：页面就在视频服务上时用同一个地址；也可以 ?api=https://xxx.workers.dev 指定一次（会记住） */
 const qs = new URLSearchParams(location.search);
 // 排查用：?debug=1 左上角显示播放器状态；?noblob=1 不预先整条下载到内存，全走网络播
-const BUILD = '2026-10-10', DEBUG = qs.get('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
+const BUILD = '2026-10-10b', DEBUG = qs.get('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
 const STATS = { made: 0, srcs: 0, heals: 0, errors: [] };
 if (qs.get('api')) localStorage.setItem('worker_base', qs.get('api').replace(/\/$/, ''));
 const SAME_ORIGIN = /workers\.dev$/.test(location.hostname) ? location.origin : '';
@@ -457,17 +457,18 @@ function createSlide(item) {
     if (t) search(t.dataset.q);
     else if (more.style.display !== 'none') more.click();
   });
-  // 点作者名：去作者的抖音/快手主页；没记着主页的老视频照旧按作者搜。点头像还是看这个作者在这里的视频
+  // 点作者名或头像：去作者的抖音/快手主页；没记着主页的老视频照旧按作者搜
   const authorUrl = /^https:\/\/www\.(douyin|kuaishou)\.com\//.test(item.author_url || '') ? item.author_url : '';
-  $('.author').onclick = e => {
-    e.stopPropagation();
+  function openAuthor() {
     if (authorUrl) window.open(authorUrl, '_blank', 'noopener');
     else if (item.author) search(item.author);
-  };
+    else toast('这条视频没有作者信息');
+  }
+  $('.author').onclick = e => { e.stopPropagation(); openAuthor(); };
   $('.author-btn').onclick = e => {
     e.stopPropagation();
     const btn = e.currentTarget;
-    // 点头像下面的「+」= 关注（记在本机）；点头像本身 = 看这个作者的视频
+    // 点头像下面的「+」= 关注（记在本机）；点头像本身 = 去作者主页
     if (e.target.closest('.follow-plus') && !btn.classList.contains('followed')) {
       if (!item.author) { toast('这条视频没有作者信息'); return; }
       followed.add(author);
@@ -476,7 +477,7 @@ function createSlide(item) {
       toast('已关注');
       return;
     }
-    if (item.author) search(item.author); else toast('这条视频没有作者信息');
+    openAuthor();
   };
   el._author = author;
 
