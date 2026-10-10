@@ -169,6 +169,24 @@
   .search-banner span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
   .search-banner button{background:rgba(255,255,255,.18);border-radius:999px;padding:3px 10px;font-size:12px;white-space:nowrap}
   @media (min-width:768px){.video-wrap video,.poster{object-fit:contain}}
+
+  /* 作者主页（照抖音）：点视频上的头像或作者名打开，头像、名字、作品数、关注，下面三列封面，点哪条从哪条开始刷他的视频 */
+  .profile-page{position:fixed;inset:0;z-index:90;background:#161616;display:none;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+  .profile-page.show{display:flex}
+  .pf-top{position:sticky;top:0;z-index:1;display:flex;align-items:center;padding:6px 8px;padding-top:max(6px, env(safe-area-inset-top));background:#161616}
+  .pf-head{display:flex;flex-direction:column;align-items:center;gap:6px;padding:4px 16px 18px}
+  .pf-avatar{width:84px;height:84px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:700;color:#fff;border:2px solid rgba(255,255,255,.85)}
+  .pf-name{font-size:19px;font-weight:700;margin-top:4px;text-align:center;word-break:break-all}
+  .pf-count{font-size:13px;color:#999}
+  .pf-actions{display:flex;gap:10px;margin-top:8px}
+  .pf-follow{min-width:132px;height:36px;border-radius:6px;background:var(--accent);color:#fff;font-weight:600;font-size:14px}
+  .pf-follow.done{background:#333;color:#bbb}
+  .pf-ext{height:36px;padding:0 14px;border-radius:6px;background:#2a2a2a;color:#ddd;font-size:13px}
+  .pf-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px}
+  .pf-cell{position:relative;display:block;padding:0;aspect-ratio:3/4;background:#222;overflow:hidden}
+  .pf-cell img{width:100%;height:100%;object-fit:cover;display:block}
+  .pf-cell span{position:absolute;left:6px;bottom:4px;font-size:12px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.8)}
+  .pf-more{padding:18px;text-align:center;color:#777;font-size:13px}
 </style>
 </head>
 <body>
@@ -200,6 +218,18 @@
   <div class="chips" id="historyChips"></div>
 </div>
 
+<div class="profile-page" id="profilePage">
+  <div class="pf-top"><button class="icon-btn" id="profileBack" aria-label="返回"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M15 5l-7 7 7 7"/></svg></button></div>
+  <div class="pf-head">
+    <div class="pf-avatar" id="pfAvatar"></div>
+    <div class="pf-name" id="pfName"></div>
+    <div class="pf-count" id="pfCount"></div>
+    <div class="pf-actions"><button class="pf-follow" id="pfFollow"></button><button class="pf-ext" id="pfExt">抖音主页</button></div>
+  </div>
+  <div class="pf-grid" id="pfGrid"></div>
+  <div class="pf-more" id="pfMore"></div>
+</div>
+
 <div class="pull-notice" id="pullNotice">下拉刷新内容</div>
 <div class="feed" id="feed"></div>
 <div class="toast" id="toast"></div>
@@ -208,14 +238,15 @@
 /** 视频服务地址：页面就在视频服务上时用同一个地址；也可以 ?api=https://xxx.workers.dev 指定一次（会记住） */
 const qs = new URLSearchParams(location.search);
 // 排查用：?debug=1 左上角显示播放器状态；?noblob=1 不预先整条下载到内存，全走网络播
-const BUILD = '2026-10-10b', DEBUG = qs.get('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
+const BUILD = '2026-10-10c', DEBUG = qs.get('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
 const STATS = { made: 0, srcs: 0, heals: 0, errors: [] };
 if (qs.get('api')) localStorage.setItem('worker_base', qs.get('api').replace(/\/$/, ''));
 const SAME_ORIGIN = /workers\.dev$/.test(location.hostname) ? location.origin : '';
 const WORKER_BASE = (qs.get('api') || store('worker_base') || SAME_ORIGIN || 'https://xiaoju-shorts.langhua98.workers.dev').replace(/\/$/, '');
 
 const API = {
-  list: (offset, limit, q, seed) => `${WORKER_BASE}/api/list?offset=${offset}&limit=${limit}&q=${encodeURIComponent(q || '')}` + (seed == null ? '' : `&shuffle=1&seed=${seed}`),
+  list: (offset, limit, q, seed, author) => `${WORKER_BASE}/api/list?offset=${offset}&limit=${limit}&q=${encodeURIComponent(q || '')}` + (seed == null ? '' : `&shuffle=1&seed=${seed}`)
+    + (author ? `&author=${encodeURIComponent(author.name || '')}&author_url=${encodeURIComponent(author.url || '')}` : ''),
   stream: (id) => `${WORKER_BASE}/stream/${id}.mp4`,
   thumb: (id) => `${WORKER_BASE}/thumb/${id}.jpg`,
   health: () => `${WORKER_BASE}/api/health`,
@@ -248,7 +279,7 @@ function markSeen(id) {
 }
 function saveSet(k, s) { store(k, JSON.stringify([...s].slice(-2000))); }
 
-let state = { offset: 0, limit: 20, total: 0, q: '', mode: 'rec', loading: false, items: [], seed: Math.floor(Math.random() * 1e9) };
+let state = { offset: 0, limit: 20, total: 0, q: '', author: null, mode: 'rec', loading: false, items: [], seed: Math.floor(Math.random() * 1e9) };
 const feed = document.getElementById('feed');
 const qInput = document.getElementById('qInput');
 
@@ -331,9 +362,10 @@ document.getElementById('apiBadge').addEventListener('click', () => {
   location.reload();
 });
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
-  if (t.dataset.mode === state.mode && !state.q) { refresh(); return; }  // 再点一下当前的「推荐/最新」= 刷新
+  if (t.dataset.mode === state.mode && !state.q && !state.author) { refresh(); return; }  // 再点一下当前的「推荐/最新」= 刷新
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
   state.mode = t.dataset.mode;
+  state.q = ''; state.author = null; renderBanner();  // 在看搜索结果或某个作者的视频时点「推荐/最新」= 回到首页
   state.seed = Math.floor(Math.random() * 1e9);
   loadMore(true);
 }));
@@ -358,15 +390,103 @@ function search(q) {
   closeSearch();
   if (q) store('search_history', JSON.stringify([q, ...searchHistory().filter(x => x !== q)].slice(0, 12)));
   state.q = q;
-  document.getElementById('searchBanner').classList.toggle('show', !!q);
-  document.getElementById('searchBannerText').textContent = `搜索：${q}`;
+  state.author = null;
+  renderBanner();
   loadMore(true);
 }
+// 顶上那条小条：在搜索就显示「搜索：…」，在看某个作者的视频就显示「@作者 的作品」（点字回到他的主页）
+function renderBanner() {
+  const text = state.author ? `@${state.author.name || '作者'} 的作品` : state.q ? `搜索：${state.q}` : '';
+  document.getElementById('searchBanner').classList.toggle('show', !!text);
+  document.getElementById('searchBannerText').textContent = text;
+}
+document.getElementById('searchBannerText').onclick = () => { if (state.author) openProfile(state.author); };
 document.getElementById('searchOpen').onclick = openSearch;
 document.getElementById('searchBack').onclick = closeSearch;
 document.getElementById('searchGo').onclick = () => search(qInput.value);
 qInput.addEventListener('keydown', e => { if (e.key === 'Enter') search(qInput.value); });
 document.getElementById('searchClear').onclick = () => search('');
+
+// ── 作者主页 ──
+const profilePage = document.getElementById('profilePage'), pfGrid = document.getElementById('pfGrid'), pfMore = document.getElementById('pfMore');
+const pfFollow = document.getElementById('pfFollow'), pfExt = document.getElementById('pfExt');
+let pf = null;  // { author, items, total, loading, done, gen }
+function openProfile(author) {
+  author = { name: String(author.name || ''), url: /^https:\/\/www\.(douyin|kuaishou)\.com\//.test(author.url || '') ? author.url : '' };
+  pf = { author, items: [], total: 0, loading: false, done: false, gen: (pf ? pf.gen : 0) + 1 };
+  const name = author.name || '（没有昵称）';
+  const av = document.getElementById('pfAvatar');
+  av.textContent = [...name][0] || '橘';
+  av.style.background = avatarColor(name);
+  document.getElementById('pfName').textContent = '@' + name;
+  document.getElementById('pfCount').textContent = '';
+  renderFollow();
+  pfExt.style.display = author.url ? '' : 'none';
+  pfExt.textContent = /kuaishou/.test(author.url) ? '快手主页' : '抖音主页';
+  pfGrid.innerHTML = '';
+  pfMore.textContent = '';
+  profilePage.scrollTop = 0;
+  profilePage.classList.add('show');
+  if (currentVideo && !currentVideo.paused) { currentVideo.pause(); pf.resume = true; }  // 主页盖住视频时先停下
+  loadProfile();
+}
+function closeProfile(resume = true) {
+  profilePage.classList.remove('show');
+  if (resume && pf && pf.resume && currentVideo && currentVideo._slide && !currentVideo._slide._userPaused) playSafe(currentVideo);
+}
+async function loadProfile() {
+  const p = pf;
+  if (!p || p.loading || p.done) return;
+  p.loading = true;
+  pfMore.textContent = '加载中…';
+  try {
+    const data = await fetchList(p.items.length, 30, '', p.author);
+    if (p !== pf) return;  // 中途换了别的作者
+    p.total = data.total;
+    for (const it of data.items) {
+      const i = p.items.push(it) - 1;
+      const c = document.createElement('button');
+      c.className = 'pf-cell';
+      c.innerHTML = `<img src="${API.thumb(it.id)}" alt="" loading="lazy" /><span>${it.duration ? fmtTime(it.duration) : ''}</span>`;
+      c.onclick = () => playAuthor(i);
+      pfGrid.appendChild(c);
+    }
+    p.done = p.items.length >= p.total || !data.items.length;
+    document.getElementById('pfCount').textContent = `${p.total} 个作品`;
+    pfMore.textContent = p.done ? (p.total ? '没有更多了' : '还没有作品') : '';
+  } catch {
+    if (p === pf) pfMore.textContent = '网络不给力，下拉到底再试';
+  } finally { p.loading = false; }
+}
+profilePage.addEventListener('scroll', () => {
+  if (profilePage.scrollTop + profilePage.clientHeight > profilePage.scrollHeight - 400) loadProfile();
+}, { passive: true });
+// 点封面：只刷这个作者的视频，从点的那条开始；已经在主页里拿到的那些直接用，不再要一遍
+function playAuthor(i) {
+  const p = pf;
+  closeProfile(false);
+  state.q = '';
+  state.author = p.author;
+  renderBanner();
+  loadMore(true, { total: p.total, items: p.items.slice() }, i);
+}
+function renderFollow() {
+  const on = pf && followed.has(pf.author.name);
+  pfFollow.textContent = on ? '已关注' : '＋ 关注';
+  pfFollow.classList.toggle('done', !!on);
+}
+pfFollow.onclick = () => {
+  const name = pf && pf.author.name;
+  if (!name) { toast('这个作者没有昵称，关注不了'); return; }
+  const on = !followed.has(name);
+  if (on) followed.add(name); else followed.delete(name);
+  saveSet('followed', followed);
+  document.querySelectorAll('.author-btn').forEach(b => { if (b.closest('.slide')?._author === name) b.classList.toggle('followed', on); });
+  renderFollow();
+  toast(on ? '已关注' : '已取消关注');
+};
+pfExt.onclick = () => { if (pf && pf.author.url) window.open(pf.author.url, '_blank', 'noopener'); };
+document.getElementById('profileBack').onclick = () => closeProfile();
 
 // ── 工具 ──
 const toastEl = document.getElementById('toast');
@@ -389,10 +509,10 @@ function captionHtml(text) {
   return escapeHtml(clean).replace(/#([^\s#@]+)/g, (m, t) => `<span class="tag" data-q="#${t}">#${t}</span>`);
 }
 
-async function fetchList(offset, limit, q) {
+async function fetchList(offset, limit, q, author = state.author) {
   try {
-    const seed = state.mode === 'rec' && !q ? state.seed : null;
-    const res = await fetch(API.list(offset, limit, q, seed), { headers: { Accept: 'application/json' } });
+    const seed = state.mode === 'rec' && !q && !author ? state.seed : null;
+    const res = await fetch(API.list(offset, limit, q, seed, author), { headers: { Accept: 'application/json' } });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (!data || !Array.isArray(data.items)) throw new Error('bad format');
@@ -457,18 +577,16 @@ function createSlide(item) {
     if (t) search(t.dataset.q);
     else if (more.style.display !== 'none') more.click();
   });
-  // 点作者名或头像：去作者的抖音/快手主页；没记着主页的老视频照旧按作者搜
-  const authorUrl = /^https:\/\/www\.(douyin|kuaishou)\.com\//.test(item.author_url || '') ? item.author_url : '';
+  // 点作者名或头像：打开我们这里的作者主页，他的视频都在里面
   function openAuthor() {
-    if (authorUrl) window.open(authorUrl, '_blank', 'noopener');
-    else if (item.author) search(item.author);
+    if (item.author || item.author_url) openProfile({ name: item.author, url: item.author_url || '' });
     else toast('这条视频没有作者信息');
   }
   $('.author').onclick = e => { e.stopPropagation(); openAuthor(); };
   $('.author-btn').onclick = e => {
     e.stopPropagation();
     const btn = e.currentTarget;
-    // 点头像下面的「+」= 关注（记在本机）；点头像本身 = 去作者主页
+    // 点头像下面的「+」= 关注（记在本机）；点头像本身 = 打开作者主页
     if (e.target.closest('.follow-plus') && !btn.classList.contains('followed')) {
       if (!item.author) { toast('这条视频没有作者信息'); return; }
       followed.add(author);
@@ -610,7 +728,7 @@ function createSlide(item) {
   return el;
 }
 
-async function loadMore(reset = false, prefetched = null) {
+async function loadMore(reset = false, prefetched = null, start = 0) {
   if (state.loading) return;
   if (reset) {
     state.offset = 0; state.items = [];
@@ -625,7 +743,7 @@ async function loadMore(reset = false, prefetched = null) {
     const data = prefetched || await fetchList(state.offset, state.limit, state.q);
     state.total = data.total;
     let items = data.items;
-    if (state.mode === 'rec' && !state.q) {  // 推荐：这一批里没看过的排前面
+    if (state.mode === 'rec' && !state.q && !state.author) {  // 推荐：这一批里没看过的排前面
       items = [...items.filter(x => !seen.has(String(x.id))), ...items.filter(x => seen.has(String(x.id)))];
     }
     for (const item of items) {
@@ -637,7 +755,7 @@ async function loadMore(reset = false, prefetched = null) {
     state.offset += data.items.length;
     if (!state.items.length) showStatus(state.q ? `没搜到「${state.q}」相关的视频` : '还没有视频', true);
     else hideStatus();
-    if (cur < 0 && state.items.length) goTo(0); else markNear();
+    if (cur < 0 && state.items.length) goTo(Math.min(start, state.items.length - 1)); else markNear();
     if (advanceFrom >= 0) { const from = advanceFrom; advanceFrom = -1; if (cur === from && autoNext) autoAdvance(); }  // 等的时候自己滑走了就不跳
   } catch (e) {
     console.error(e);
@@ -1025,7 +1143,7 @@ async function refresh() {
 }
 
 document.addEventListener('keydown', e => {
-  if (searchPage.classList.contains('show')) return;
+  if (searchPage.classList.contains('show') || profilePage.classList.contains('show')) return;
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
     goTo(cur + (e.key === 'ArrowDown' ? 1 : -1), true);
