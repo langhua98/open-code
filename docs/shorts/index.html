@@ -49,7 +49,7 @@
   .search-hint{margin-top:18px;font-size:13px;color:#888}
   .chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
   .chip{font-size:13px;color:#ddd;background:#222;border-radius:999px;padding:6px 12px}
-  .search-ver{margin-top:auto;padding:16px;text-align:center;font-size:12px;color:#555}
+  .search-ver{margin-top:28px;padding:8px 0;font-size:12px;color:#777}
 
   /* 上下翻：交给浏览器原生滚动 + 吸附（参考 GitHub 上的 doomscroller）。手指拖动、惯性、吸附都由浏览器做，
      苹果手机上在系统的滚动线程里跑，页面 JS 再忙也不掉帧；snap-stop:always 让甩得再猛也只翻一条，跟抖音一样。
@@ -240,7 +240,7 @@
 /** 视频服务地址：页面就在视频服务上时用同一个地址；也可以 ?api=https://xxx.workers.dev 指定一次（会记住） */
 const qs = new URLSearchParams(location.search);
 // 排查用：?debug=1 左上角显示播放器状态；?noblob=1 不预先整条下载到内存，全走网络播
-const BUILD = '2026-10-11', DEBUG = qs.get('debug') === '1' || store('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
+const BUILD = '2026-10-11b', DEBUG = qs.get('debug') === '1' || store('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
 const STATS = { made: 0, srcs: 0, heals: 0, errors: [] };
 if (qs.get('api')) localStorage.setItem('worker_base', qs.get('api').replace(/\/$/, ''));
 const SAME_ORIGIN = /workers\.dev$/.test(location.hostname) ? location.origin : '';
