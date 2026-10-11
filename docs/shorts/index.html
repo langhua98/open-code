@@ -49,6 +49,7 @@
   .search-hint{margin-top:18px;font-size:13px;color:#888}
   .chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
   .chip{font-size:13px;color:#ddd;background:#222;border-radius:999px;padding:6px 12px}
+  .search-ver{margin-top:auto;padding:16px;text-align:center;font-size:12px;color:#555}
 
   /* 上下翻：交给浏览器原生滚动 + 吸附（参考 GitHub 上的 doomscroller）。手指拖动、惯性、吸附都由浏览器做，
      苹果手机上在系统的滚动线程里跑，页面 JS 再忙也不掉帧；snap-stop:always 让甩得再猛也只翻一条，跟抖音一样。
@@ -216,6 +217,7 @@
   </div>
   <div class="search-hint">最近搜过</div>
   <div class="chips" id="historyChips"></div>
+  <div class="search-ver" id="buildLabel"></div>
 </div>
 
 <div class="profile-page" id="profilePage">
@@ -238,7 +240,7 @@
 /** 视频服务地址：页面就在视频服务上时用同一个地址；也可以 ?api=https://xxx.workers.dev 指定一次（会记住） */
 const qs = new URLSearchParams(location.search);
 // 排查用：?debug=1 左上角显示播放器状态；?noblob=1 不预先整条下载到内存，全走网络播
-const BUILD = '2026-10-10d', DEBUG = qs.get('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
+const BUILD = '2026-10-11', DEBUG = qs.get('debug') === '1' || store('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
 const STATS = { made: 0, srcs: 0, heals: 0, errors: [] };
 if (qs.get('api')) localStorage.setItem('worker_base', qs.get('api').replace(/\/$/, ''));
 const SAME_ORIGIN = /workers\.dev$/.test(location.hostname) ? location.origin : '';
@@ -1167,6 +1169,34 @@ document.addEventListener('keydown', e => {
   try { const h = await fetch(API.health()); if (h.ok) setStatus(true, '云在线'); } catch { /* fetchList 里再判 */ }
   loadMore(true);
 })();
+// ── 版本：搜索页最下面显示；连点 5 下开关调试面板（存到桌面的网页没有地址栏，加不了 ?debug=1）──
+const buildLabel = document.getElementById('buildLabel');
+buildLabel.textContent = `版本 ${BUILD}${DEBUG ? ' · 调试中' : ''}`;
+let verTaps = [];
+buildLabel.onclick = () => {
+  const now = Date.now();
+  verTaps = [...verTaps.filter(t => now - t < 3000), now];
+  if (verTaps.length < 5) return;
+  store('debug', store('debug') === '1' ? '0' : '1');
+  location.reload();
+};
+// ── 自动更新：打开时、切回来时看看网上是不是有新版本，有就换上。存到桌面的网页自己有一份缓存，
+// 以前改完了它还一直用旧的（浏览器里不卡、桌面上卡，就是桌面上还在跑旧版）。每个新版本只试一次，免得缓存没更新时来回刷新 ──
+async function checkUpdate() {
+  try {
+    const r = await fetch(location.pathname + '?build=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const m = /const BUILD = '([^']+)'/.exec(await r.text());
+    if (!m || m[1] === BUILD || sessionStorage.getItem('tried_build') === m[1]) return;
+    sessionStorage.setItem('tried_build', m[1]);
+    const u = new URL(location.href);
+    u.searchParams.set('v', m[1]);
+    location.replace(u.href);
+  } catch { /* 没网、私密模式之类：下次再看 */ }
+}
+checkUpdate();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
+
 // ── 调试面板（?debug=1）：卡住的时候截图发过来，看是解码、加载还是内存的问题 ──
 if (DEBUG) {
   const box = document.createElement('pre');
