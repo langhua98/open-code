@@ -240,14 +240,16 @@
 /** 视频服务地址：页面就在视频服务上时用同一个地址；也可以 ?api=https://xxx.workers.dev 指定一次（会记住） */
 const qs = new URLSearchParams(location.search);
 // 排查用：?debug=1 左上角显示播放器状态；?noblob=1 不预先整条下载到内存，全走网络播
-const BUILD = '2026-10-11b', DEBUG = qs.get('debug') === '1' || store('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
+const BUILD = '2026-10-12', DEBUG = qs.get('debug') === '1' || store('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
 const STATS = { made: 0, srcs: 0, heals: 0, errors: [] };
 if (qs.get('api')) localStorage.setItem('worker_base', qs.get('api').replace(/\/$/, ''));
 const SAME_ORIGIN = /workers\.dev$/.test(location.hostname) ? location.origin : '';
 const WORKER_BASE = (qs.get('api') || store('worker_base') || SAME_ORIGIN || 'https://xiaoju-shorts.langhua98.workers.dev').replace(/\/$/, '');
 
 const API = {
-  list: (offset, limit, q, seed, author) => `${WORKER_BASE}/api/list?offset=${offset}&limit=${limit}&q=${encodeURIComponent(q || '')}` + (seed == null ? '' : `&shuffle=1&seed=${seed}`)
+  list: (offset, limit, q, seed, author, interest) => `${WORKER_BASE}/api/list?offset=${offset}&limit=${limit}&q=${encodeURIComponent(q || '')}` + (seed == null ? '' : `&shuffle=1&seed=${seed}`)
+    + (seed != null && interest && interest.tags.length ? `&tags=${encodeURIComponent(interest.tags.join('\n'))}` : '')
+    + (seed != null && interest && interest.authors.length ? `&authors=${encodeURIComponent(interest.authors.join('\n'))}` : '')
     + (author ? `&author=${encodeURIComponent(author.name || '')}&author_url=${encodeURIComponent(author.url || '')}` : ''),
   stream: (id) => `${WORKER_BASE}/stream/${id}.mp4`,
   thumb: (id) => `${WORKER_BASE}/thumb/${id}.jpg`,
@@ -263,6 +265,30 @@ function store(k, v) {
 }
 function storeSet(k) { try { return new Set(JSON.parse(store(k) || '[]')); } catch { return new Set(); } }
 const liked = storeSet('liked'), faved = storeSet('faved'), followed = storeSet('followed');
+// 兴趣：点过赞的视频的话题和作者（记在本机）。推荐时同话题、同作者的多给一点权重
+const likedMeta = (() => { try { return JSON.parse(store('liked_meta') || '{}'); } catch { return {}; } })();
+function tagsOf(text) {
+  return [...String(text || '').matchAll(/#([^\s#@]+)/g)].map(m => m[1].toLowerCase())
+    .filter(t => !/^(dy|ks)[0-9a-z_-]{6,}$/.test(t)).slice(0, 10);  // 我们自己加的 #dy… 编号不算
+}
+function rememberLike(item, on) {
+  const id = String(item.id);
+  if (on) likedMeta[id] = { t: tagsOf(item.caption), a: item.author || '' };
+  else delete likedMeta[id];
+  const ids = Object.keys(likedMeta);
+  if (ids.length > 300) ids.slice(0, ids.length - 300).forEach(k => delete likedMeta[k]);
+  store('liked_meta', JSON.stringify(likedMeta));
+}
+// 点赞最多的前 15 个话题、前 5 个作者
+function interestProfile() {
+  const tags = new Map(), authors = new Map();
+  for (const m of Object.values(likedMeta)) {
+    for (const t of m.t || []) tags.set(t, (tags.get(t) || 0) + 1);
+    if (m.a) authors.set(m.a, (authors.get(m.a) || 0) + 1);
+  }
+  const top = (m, n) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(e => e[0]);
+  return { tags: top(tags, 15), authors: top(authors, 5) };
+}
 // 点亮/取消时让按钮弹一下（重新加 class 才能重播动画）
 function bump(btn, on) {
   btn.classList.remove('pop', 'unpop');
@@ -281,7 +307,13 @@ function markSeen(id) {
 }
 function saveSet(k, s) { store(k, JSON.stringify([...s].slice(-2000))); }
 
-let state = { offset: 0, limit: 20, total: 0, q: '', author: null, mode: 'rec', loading: false, items: [], seed: Math.floor(Math.random() * 1e9) };
+let state = { offset: 0, limit: 20, total: 0, q: '', author: null, mode: 'rec', loading: false, items: [], seed: 0, interest: null };
+// 推荐换一批：新的随机种子，兴趣也在这时定下来（翻页期间不变，不然顺序变了会重复、漏掉）
+function newSeed() {
+  state.seed = Math.floor(Math.random() * 1e9);
+  state.interest = interestProfile();
+}
+newSeed();
 const feed = document.getElementById('feed');
 const qInput = document.getElementById('qInput');
 
@@ -368,7 +400,7 @@ document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () =>
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
   state.mode = t.dataset.mode;
   state.q = ''; state.author = null; renderBanner();  // 在看搜索结果或某个作者的视频时点「推荐/最新」= 回到首页
-  state.seed = Math.floor(Math.random() * 1e9);
+  newSeed();
   loadMore(true);
 }));
 
@@ -514,7 +546,7 @@ function captionHtml(text) {
 async function fetchList(offset, limit, q, author = state.author) {
   try {
     const seed = state.mode === 'rec' && !q && !author ? state.seed : null;
-    const res = await fetch(API.list(offset, limit, q, seed, author), { headers: { Accept: 'application/json' } });
+    const res = await fetch(API.list(offset, limit, q, seed, author, state.interest), { headers: { Accept: 'application/json' } });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (!data || !Array.isArray(data.items)) throw new Error('bad format');
@@ -536,6 +568,7 @@ function createSlide(item) {
   const day = item.created ? new Date(item.created * 1000).toLocaleDateString('sv') : item.date ? String(item.date).slice(0, 10) : '';
   const meta = [item.duration ? fmtTime(item.duration) : '', day].filter(Boolean).join(' · ');
   const id = String(item.id);
+  if (liked.has(id) && !likedMeta[id]) rememberLike(item, true);  // 以前点过赞、还没记话题的：刷到时补上
   el.innerHTML = `
     <div class="video-wrap">
       <img class="poster" src="${API.thumb(item.id)}" alt="" loading="lazy" />
@@ -691,6 +724,7 @@ function createSlide(item) {
     const on = only ? true : !liked.has(id);
     if (on) liked.add(id); else liked.delete(id);
     saveSet('liked', liked);
+    rememberLike(item, on);
     if (likeBtn.classList.contains('on') !== on) bump(likeBtn, on);  // 双击已赞的不再弹
     likeBtn.classList.toggle('on', on);
     likeBtn.querySelector('.act-label').textContent = on ? '已赞' : '赞';
@@ -1139,8 +1173,8 @@ async function refresh() {
   if (refreshing || state.loading) return;
   refreshing = true;
   document.body.classList.add('refreshing');
-  const oldSeed = state.seed;
-  state.seed = Math.floor(Math.random() * 1e9);  // 推荐：换一批
+  const oldSeed = state.seed, oldInterest = state.interest;
+  newSeed();  // 推荐：换一批，按最新的点赞兴趣
   try {
     const [data] = await Promise.all([
       fetchList(0, state.limit, state.q),
@@ -1149,6 +1183,7 @@ async function refresh() {
     await loadMore(true, data);
   } catch {
     state.seed = oldSeed;
+    state.interest = oldInterest;
     toast('网络不给力，请稍后重试');
   } finally {
     refreshing = false;
