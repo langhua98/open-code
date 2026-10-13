@@ -155,6 +155,9 @@
     26%{transform:translate(-50%,-50%) rotate(var(--rot)) scale(1)}
     62%{transform:translate(-50%,-50%) rotate(var(--rot)) scale(1);opacity:1}
     100%{transform:translate(-50%,-160%) rotate(var(--rot)) scale(1.9);opacity:0}}
+  /* 点了「不喜欢」的：盖一层，不再播 */
+  .slide.gone::after{content:attr(data-gone);position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.82);color:#bbb;font-size:15px}
   .slide-error{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:7;display:none;padding:10px 16px;border-radius:999px;background:rgba(0,0,0,.6);font-size:13px}
   .slide-error.show{display:block}
   .status{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--dim);z-index:40;text-align:center;padding:24px}
@@ -240,11 +243,20 @@
 /** 视频服务地址：页面就在视频服务上时用同一个地址；也可以 ?api=https://xxx.workers.dev 指定一次（会记住） */
 const qs = new URLSearchParams(location.search);
 // 排查用：?debug=1 左上角显示播放器状态；?noblob=1 不预先整条下载到内存，全走网络播
-const BUILD = '2026-10-12', DEBUG = qs.get('debug') === '1' || store('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
+const BUILD = '2026-10-13', DEBUG = qs.get('debug') === '1' || store('debug') === '1', NO_BLOB = qs.get('noblob') === '1';
 const STATS = { made: 0, srcs: 0, heals: 0, errors: [] };
 if (qs.get('api')) localStorage.setItem('worker_base', qs.get('api').replace(/\/$/, ''));
 const SAME_ORIGIN = /workers\.dev$/.test(location.hostname) ? location.origin : '';
 const WORKER_BASE = (qs.get('api') || store('worker_base') || SAME_ORIGIN || 'https://xiaoju-shorts.langhua98.workers.dev').replace(/\/$/, '');
+// 删视频（「不喜欢」→ 删频道原帖、从视频池拿掉）在主 Worker 上，要频道主的网页口令：
+// 机器人里发「网页口令」拿带 #key= 的链接打开一次就记住；存到桌面的网页可以在搜索框里搜「口令 xxxx」
+const MAIN_BASE = 'https://xiaoju-video.langhua98.workers.dev';
+(() => {
+  const m = /(?:^#|&)key=([A-Za-z0-9_-]{8,})/.exec(location.hash);
+  if (!m) return;
+  store('owner_key', m[1]);
+  history.replaceState(null, '', location.pathname + location.search);  // 口令别留在地址栏里
+})();
 
 const API = {
   list: (offset, limit, q, seed, author, interest) => `${WORKER_BASE}/api/list?offset=${offset}&limit=${limit}&q=${encodeURIComponent(q || '')}` + (seed == null ? '' : `&shuffle=1&seed=${seed}`)
@@ -348,6 +360,8 @@ function applyMute() {
 // 256×256 画布，颜色跟着 currentColor
 const svg = d => `<svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="${d}"/></svg>`;
 const ICON = {
+  // 不喜欢：一颗裂开的心
+  dislike: `<svg viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M240,102c0,70-103.79,126.66-108.21,129a8,8,0,0,1-7.58,0C119.79,228.66,16,172,16,102A62.07,62.07,0,0,1,78,40c20.65,0,38.73,8.88,50,23.89C139.27,48.88,157.35,40,178,40A62.07,62.07,0,0,1,240,102Z"/><path d="M136 60 L112 112 L148 140 L120 208" fill="none" stroke="#000" stroke-opacity=".55" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/></svg>`,
   sound: svg('M160,32.25V223.69a8.29,8.29,0,0,1-3.91,7.18,8,8,0,0,1-9-.56l-65.57-51A4,4,0,0,1,80,176.16V79.84a4,4,0,0,1,1.55-3.15l65.57-51a8,8,0,0,1,10,.16A8.27,8.27,0,0,1,160,32.25ZM60,80H32A16,16,0,0,0,16,96v64a16,16,0,0,0,16,16H60a4,4,0,0,0,4-4V84A4,4,0,0,0,60,80Zm126.77,20.84a8,8,0,0,0-.72,11.3,24,24,0,0,1,0,31.72,8,8,0,1,0,12,10.58,40,40,0,0,0,0-52.88A8,8,0,0,0,186.74,100.84Zm40.89-26.17a8,8,0,1,0-11.92,10.66,64,64,0,0,1,0,85.34,8,8,0,1,0,11.92,10.66,80,80,0,0,0,0-106.66Z'),
   muted: svg('M245.66,146.34a8,8,0,0,1-11.32,11.32L216,139.31l-18.34,18.35a8,8,0,0,1-11.32-11.32L204.69,128l-18.35-18.34a8,8,0,0,1,11.32-11.32L216,116.69l18.34-18.35a8,8,0,0,1,11.32,11.32L227.31,128ZM60,80H32A16,16,0,0,0,16,96v64a16,16,0,0,0,16,16H60a4,4,0,0,0,4-4V84A4,4,0,0,0,60,80Zm97.15-54.15a8,8,0,0,0-10-.16l-65.57,51A4,4,0,0,0,80,79.84v96.32a4,4,0,0,0,1.55,3.15l65.57,51a8,8,0,0,0,9,.56,8.29,8.29,0,0,0,3.91-7.18V32.25A8.27,8.27,0,0,0,157.12,25.85Z'),
   heart: svg('M240,102c0,70-103.79,126.66-108.21,129a8,8,0,0,1-7.58,0C119.79,228.66,16,172,16,102A62.07,62.07,0,0,1,78,40c20.65,0,38.73,8.88,50,23.89C139.27,48.88,157.35,40,178,40A62.07,62.07,0,0,1,240,102Z'),
@@ -422,6 +436,8 @@ function renderHistory() {
 function search(q) {
   q = String(q || '').trim();
   closeSearch();
+  const key = /^(?:口令|key=?)\s*([A-Za-z0-9_-]{8,})$/i.exec(q);
+  if (key) { store('owner_key', key[1]); toast('记住了频道主口令：「不喜欢」会删掉视频'); return; }
   if (q) store('search_history', JSON.stringify([q, ...searchHistory().filter(x => x !== q)].slice(0, 12)));
   state.q = q;
   state.author = null;
@@ -581,7 +597,7 @@ function createSlide(item) {
     <div class="actions">
       <button class="act author-btn${followed.has(author) ? ' followed done' : ''}"><div class="avatar" style="background:${avatarColor(author)}">${escapeHtml([...author][0] || '橘')}<div class="follow-plus"><span class="pl">${ICON.plus}</span><span class="ck">${ICON.check}</span></div></div></button>
       <button class="act like-btn${liked.has(id) ? ' on' : ''}"><div class="act-icon">${ICON.heart}</div><div class="act-label">${liked.has(id) ? '已赞' : '赞'}</div></button>
-      <button class="act comment-btn"><div class="act-icon">${ICON.comment}</div><div class="act-label">评论</div></button>
+      <button class="act dislike-btn"><div class="act-icon">${ICON.dislike}</div><div class="act-label">不喜欢</div></button>
       <button class="act fav-btn${faved.has(id) ? ' on' : ''}"><div class="act-icon">${ICON.star}</div><div class="act-label">${faved.has(id) ? '已收藏' : '收藏'}</div></button>
       <button class="act mute-btn"><div class="act-icon"><span class="when-on">${ICON.sound}</span><span class="when-off">${ICON.muted}</span></div><div class="act-label"><span class="when-on">声音</span><span class="when-off">静音</span></div></button>
       <button class="act share-btn"><div class="act-icon">${ICON.share}</div><div class="act-label">分享</div></button>
@@ -746,7 +762,7 @@ function createSlide(item) {
     favBtn.querySelector('.act-label').textContent = on ? '已收藏' : '收藏';
     toast(on ? '已收藏' : '取消收藏');
   };
-  $('.comment-btn').onclick = e => { e.stopPropagation(); toast('评论还没开放'); };
+  $('.dislike-btn').onclick = e => { e.stopPropagation(); dislike(el, item); };
   $('.share-btn').onclick = e => {
     e.stopPropagation();
     const url = `${location.origin}${location.pathname}?v=${item.id}`;
@@ -764,6 +780,31 @@ function createSlide(item) {
   return el;
 }
 
+// 不喜欢：频道主（有网页口令）是真删——频道原帖删掉、视频池拿掉，找不回来，所以先确认；
+// 别人只是这台手机上不再给他看。都马上盖住、跳到下一条
+const disliked = storeSet('disliked');
+async function dislike(slide, item) {
+  const id = String(item.id);
+  const key = store('owner_key');
+  if (key) {
+    if (!confirm('删掉这条视频？频道里的原帖也会删掉，找不回来。')) return;
+    try {
+      // text/plain：不让浏览器先发跨域预检
+      const r = await fetch(`${MAIN_BASE}/api/heartbreak`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ id: Number(id), key }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 403) { store('owner_key', ''); toast('口令过期了：在机器人里发「网页口令」拿新的'); return; }
+      if (!r.ok) { toast(j.error || '没删成，稍后再试'); return; }
+    } catch { toast('网络不给力，没删成'); return; }
+  }
+  disliked.add(id);
+  saveSet('disliked', disliked);
+  slide.dataset.gone = key ? '已删除' : '不再给你推荐这条';
+  slide.classList.add('gone');
+  if (slide._video) slide._video.pause();
+  toast(key ? '已删除，频道原帖也删了' : '好的，不再给你推荐这条');
+  if (Number(slide.dataset.index) === cur) setTimeout(() => goTo(cur + 1, true), 400);
+}
+
 async function loadMore(reset = false, prefetched = null, start = 0) {
   if (state.loading) return;
   if (reset) {
@@ -778,7 +819,7 @@ async function loadMore(reset = false, prefetched = null, start = 0) {
   try {
     const data = prefetched || await fetchList(state.offset, state.limit, state.q);
     state.total = data.total;
-    let items = data.items;
+    let items = data.items.filter(x => !disliked.has(String(x.id)));  // 点过「不喜欢」的不再出现
     if (state.mode === 'rec' && !state.q && !state.author) {  // 推荐：这一批里没看过的排前面
       items = [...items.filter(x => !seen.has(String(x.id))), ...items.filter(x => seen.has(String(x.id)))];
     }
@@ -928,6 +969,7 @@ function activate(idx) {
   slide._userPaused = false;  // 翻回来的视频接着播，跟抖音一样
   slide.classList.remove('paused');
   video.loop = !autoNext;
+  if (slide.classList.contains('gone')) { video.pause(); return; }  // 点过「不喜欢」的：不播
   if (slide._stale) slide._reload();  // 预热时出过错的，翻到了重新加载
   if (video.readyState < 3) slide.classList.add('waiting');
   playSafe(video);
