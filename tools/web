@@ -1,31 +1,38 @@
 #!/usr/bin/env bash
-# Serve the OpenCode web UI on port 4096 and print the address to open on a phone.
+# Serve the OpenCode web UI (port 4096 by default) and print the address to open on a phone.
 #
 #   web           start it if it is not running
 #   web restart   stop it and start again (e.g. after `git pull` changed opencode.json)
 #
 # The server runs in the foreground of this terminal: keep the terminal open. Its logs
 # count as terminal activity, so Codespaces does not idle-stop while you use the web UI.
+#
+# WEB_HOST / WEB_PORT change where it listens (default 127.0.0.1:4096). A Hugging Face Space
+# sets WEB_HOST=0.0.0.0 WEB_PORT=7860; listening beyond this machine needs OPENCODE_SERVER_PASSWORD.
 cd "$(dirname "$0")/.." || exit 1
 
-url="http://127.0.0.1:4096"
+host="${WEB_HOST:-127.0.0.1}"
+port="${WEB_PORT:-4096}"
+url="http://127.0.0.1:$port"
 if [ -n "${CODESPACE_NAME:-}" ]; then
-  url="https://${CODESPACE_NAME}-4096.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}"
+  url="https://${CODESPACE_NAME}-$port.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}"
+elif [ -n "${SPACE_HOST:-}" ]; then
+  url="https://$SPACE_HOST"
 fi
 
 if [ "${1:-}" = "restart" ]; then
-  pkill -f "opencode serve --port 4096"
+  pkill -f "opencode serve .*--port $port"
   # Wait until it has exited and released the port (an exiting process vanishes from pgrep
   # slightly before its socket closes).
   for _ in $(seq 1 20); do
-    if ! pgrep -f "opencode serve --port 4096" >/dev/null && ! (echo >/dev/tcp/127.0.0.1/4096) 2>/dev/null; then
+    if ! pgrep -f "opencode serve .*--port $port" >/dev/null && ! (echo >/dev/tcp/127.0.0.1/$port) 2>/dev/null; then
       break
     fi
     sleep 0.5
   done
 fi
 
-if (echo >/dev/tcp/127.0.0.1/4096) 2>/dev/null; then
+if (echo >/dev/tcp/127.0.0.1/$port) 2>/dev/null; then
   echo "OpenCode 网页版已经在运行：$url"
   echo "要重启请输入：web restart"
   exit 0
@@ -56,6 +63,11 @@ keep_chats
 # Web search for every model, not only the ones from the OpenCode provider.
 export OPENCODE_ENABLE_EXA=1
 
+if [ "$host" != "127.0.0.1" ] && [ "$host" != "localhost" ] && [ -z "${OPENCODE_SERVER_PASSWORD:-}" ]; then
+  echo "要在 $host 上对外开放，必须先设置 OPENCODE_SERVER_PASSWORD，否则任何人都能控制这台机器。" >&2
+  exit 1
+fi
+
 echo "OpenCode 网页版：$url"
 echo "这个终端请保持打开，关掉它 OpenCode 就停了。"
-exec opencode serve --port 4096 --print-logs
+exec opencode serve --hostname "$host" --port "$port" --print-logs
