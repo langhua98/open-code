@@ -77,7 +77,7 @@ It re-runs itself under `xvfb-run` (real, headful Chromium on a virtual screen) 
 - `QR_REFRESHED <path> <time>` → comes about every 60 s until the user scans. Send the new path at once, say "上一张过期了，扫这张".
 - `QR_NOT_LOADED <path>` → the QR never appeared. Don't send anything to scan; tell the user and offer to retry.
 - `VERIFY <path> <words>` → Douyin wants an extra check (SMS / 刷脸). Send the screenshot and tell the user to follow the prompt in the 抖音 App.
-- `ALREADY_LOGGED_IN` → no QR needed, cookies refreshed. `LOGGED_IN` → done. `TIMEOUT` → say so, offer to retry.
+- `ALREADY_LOGGED_IN` → no QR needed, cookies refreshed (check `login cookies:` isn't `[]`). `LOGGED_IN` → done. `TIMEOUT` → say so, offer to retry.
 
 **Never send a QR image that is not the path from the newest `QR_READY`/`QR_REFRESHED` line.** Only one `/home/user/douyin_qr_<HHMMSS>.png` exists at a time; the file name is the time it was drawn. If you're unsure, `ls /home/user/douyin_qr_*.png` — no file means no valid QR. The old `/home/user/douyin_qr_crop.png` is obsolete (the script deletes it); never send it.
 
@@ -86,7 +86,7 @@ It re-runs itself under `xvfb-run` (real, headful Chromium on a virtual screen) 
 - **Headless = dead QR.** See above. Headful + `xvfb-run` + `--disable-blink-features=AutomationControlled` + MediaCrawler's `stealth.min.js` (`/opt/MediaCrawler/libs/`) is the same recipe the Space's video crawler logs in with.
 - **The QR box first shows only a TikTok logo**; the QR image arrives a few seconds later. The script waits for the real `<img>` (≥100 px) before screenshotting `#animate_qrcode_container`.
 - **`canvas.toDataURL()` / `<img src>` returns a BLANK white PNG (~1.5 KB)** on douyin.com. Screenshot the element instead.
-- **Login detection**: scanning alone does not log in (user must tap confirm in-app), and the cookie set may lack `sessionid`/`sessionid_ss`. The script checks DOM (avatar present **and** no login button) as well as cookies.
+- **Login detection**: scanning alone does not log in (user must tap 确认登录 in-app). A real login always sets `sessionid`; the script counts only localStorage `HasUserLogin`=1, cookie `LOGIN_STATUS`=1 or a non-empty `sessionid`/`sessionid_ss`/`sid_tt`/`sid_guard`, and prints `login cookies: [...]`. The old DOM guess (avatar visible, no login button) was true while logged out and reported LOGGED_IN with nobody scanning. **Never tell the user "登录成功" if `login cookies:` is empty `[]`.**
 - **`Execution context was destroyed, most likely because of a navigation`** — Douyin reloads right after the scan is confirmed and right after load with a saved login. The script's `dom()` helper waits and retries; check `ctx.cookies()` first.
 - **One run at a time**: the script stops any earlier run of itself (pid file `~/.douyin_login.pid`). Don't start a second one while the first is still waiting for a scan — re-running means a new QR and the old one is dead.
 - **Keep the user informed**: send the QR the moment it prints and reply in the chat; don't sit in a long tool loop without answering.
