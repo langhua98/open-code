@@ -51,7 +51,8 @@ Send the path from the newest `QR_READY` / `QR_REFRESHED` line **immediately**
 | `su: Authentication failure` during install | `--with-deps` needs root; install chromium without it |
 | `EACCES ... /opt/pw-browsers/__dirlock` | set `PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright` |
 | `ModuleNotFoundError: No module named 'playwright'` right after installing | a *different* python is on PATH than the one pip targeted; check `python3 -c "import sys; print(sys.executable)"` |
-| Poll never sees `sessionid` | the user scanned but didn't confirm in the app; the script also checks the DOM |
+| Poll never sees `sessionid` | the user scanned but didn't tap 确认登录 in the app. Not logged in -- don't report success |
+| LOGGED_IN / ALREADY_LOGGED_IN although nobody scanned, no `sessionid` saved | old DOM guess (avatar + no login button) is true logged out; the script now only trusts HasUserLogin / LOGIN_STATUS / sessionid. Delete `~/.douyin_state.json` and `~/.douyin_cookies.json` from such a run |
 | `/tmp` writes fail | use `/home/user/` |
 | `Page.query_selector: Execution context was destroyed ... navigation` | Douyin navigates after the scan is confirmed and after load with a saved state; the script's `dom()` retries |
 | Two QR runs at once, both broken | the script stops the earlier run; don't start a second while one waits |

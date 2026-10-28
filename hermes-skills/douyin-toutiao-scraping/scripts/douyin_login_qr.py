@@ -42,9 +42,11 @@ Hard-won details (do not "fix" these back):
     QR the second it prints; never run vision_analyze first.
   * Screenshot the element `#animate_qrcode_container` (after its <img> loaded).
     Canvas/`<img src>` extraction gives a BLANK 1.5KB PNG; don't use it.
-  * Scan-only login yields NO `sessionid` / `sessionid_ss` cookie (the user must
-    tap confirm in the app). Verify login by DOM (avatar / logout button)
-    as well as by cookie name.
+  * Login test = localStorage HasUserLogin == "1", or cookie LOGIN_STATUS == "1",
+    or a non-empty sessionid / sessionid_ss / sid_tt / sid_guard (same as
+    streamer/dy_login.py). NEVER guess from the DOM (avatar present, no login
+    button): that is also true logged out and reported LOGGED_IN / ALREADY_LOGGED_IN
+    with nobody scanning. A real login always has sessionid.
   * "Execution context was destroyed, most likely because of a navigation":
     Douyin reloads / redirects the page right after the scan is confirmed, and on
     a second run (state already saved) right after load. Never call DOM methods
@@ -67,7 +69,7 @@ PID_PATH = os.path.expanduser("~/.douyin_login.pid")
 OUT_DIR = "/home/user"
 QR_GLOB = os.path.join(OUT_DIR, "douyin_qr_*.png")
 STEALTH = ["/opt/MediaCrawler/libs/stealth.min.js", "libs/stealth.min.js"]
-LOGIN_COOKIES = {"sessionid", "sessionid_ss", "sid_tt", "uid_tt"}
+LOGIN_COOKIES = {"sessionid", "sessionid_ss", "sid_tt", "sid_guard"}
 QR_BOX = "#animate_qrcode_container"
 QR_IMG = "#animate_qrcode_container img"
 LOGIN_PANEL = "#login-panel-new"
@@ -75,7 +77,6 @@ LOGIN_BUTTONS = ['#douyin-header-menuCt [data-e2e="login-button"]',
                  '[data-e2e="login-button"]',
                  "xpath=//p[text() = '登录']",
                  'button:has-text("登录")']
-AVATAR = '[data-e2e="live-avatar"], [data-e2e="user-info"]'
 EXPIRED_WORDS = ("二维码已失效", "二维码已过期", "点击刷新")
 VERIFY_WORDS = ("身份验证", "安全验证", "验证身份", "验证方式", "刷脸验证", "人脸验证", "扫脸验证")
 # what Playwright raises when the page navigated under a DOM call
@@ -160,9 +161,15 @@ def main():
         return dom(pg, lambda: pg.evaluate("document.body ? document.body.innerText : ''"), default="") or ""
 
     def logged_in(pg, ctx):
-        if LOGIN_COOKIES & {c["name"] for c in ctx.cookies()}:
+        """Same test as the Space's own working login (streamer/dy_login.py). No DOM guessing:
+        an avatar on the page and a missing login button also happen logged OUT (live-stream
+        avatars in the feed, the header's 登录 is a <p>), which reported LOGGED_IN with nobody scanning."""
+        ls = dom(pg, lambda: pg.evaluate('() => window.localStorage.getItem("HasUserLogin")'))
+        if ls == "1":
             return True
-        return visible(pg, AVATAR) and not visible(pg, '[data-e2e="login-button"]')
+        cookies = ctx.cookies("https://www.douyin.com/")
+        return any(c["name"] == "LOGIN_STATUS" and c["value"] == "1" for c in cookies) or \
+            any(c["name"] in LOGIN_COOKIES and c["value"] for c in cookies)
 
     def save(ctx):
         cookies = ctx.cookies()
@@ -174,6 +181,7 @@ def main():
             pass
         say("cookies saved:", COOKIE_PATH, len(cookies), "items")
         say("cookie names:", sorted({c["name"] for c in cookies}))
+        say("login cookies:", sorted(LOGIN_COOKIES & {c["name"] for c in cookies if c["value"]}))
 
     def open_login(pg, seconds=20):
         """The panel usually pops up by itself a few seconds after load; if not, click 登录."""
@@ -262,7 +270,7 @@ def main():
                 pg.wait_for_timeout(3000)
         pg.wait_for_timeout(5000)
 
-        if os.path.exists(STATE_PATH) and logged_in(pg, ctx):
+        if logged_in(pg, ctx):
             say("ALREADY_LOGGED_IN")
             save(ctx)
             browser.close()
