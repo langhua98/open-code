@@ -5,7 +5,7 @@ Opens Douyin, triggers the login modal, screenshots the QR element to a PNG the
 user can scan, then polls until login succeeds and dumps cookies.
 
 Usage:
-    PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright python3 douyin_login_qr.py [timeout_seconds]
+    PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers /opt/mc-venv/bin/python douyin_login_qr.py [timeout_seconds]
 
 Prints one status line per event (read them from the background process output):
     ALREADY_LOGGED_IN            saved state is still valid -- no scan needed, cookies refreshed

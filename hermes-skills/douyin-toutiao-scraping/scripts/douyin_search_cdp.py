@@ -2,7 +2,7 @@
 """抖音关键词搜索：按「最新发布」搜视频，绕开推荐算法（信息茧房），结果存成表格。
 
 Usage:
-    export PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright
+    export PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers   # run with /opt/mc-venv/bin/python
     python3 douyin_search_cdp.py "贵州 赶集" [count] [--days N] [--hot]
 
     count    想要多少条（默认 30，最多 200）

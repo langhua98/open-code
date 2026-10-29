@@ -2,7 +2,7 @@
 """Dump a Douyin account's works by reading the page's own signed aweme/post JSON via CDP.
 
 Usage:
-    export PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright
+    export PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers   # run with /opt/mc-venv/bin/python
     python3 douyin_user_works_cdp.py [sec_uid]
 
 Prereq: a REAL login state at ~/.douyin_state.json (must carry a sessionid cookie —
