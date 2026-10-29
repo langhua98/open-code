@@ -217,7 +217,7 @@ def main():
         try:
             if not xtest:
                 xtest.append(XTest())
-            box = dom(pg, lambda: loc.bounding_box())
+            box = dom(pg, lambda: loc.bounding_box(timeout=2000))
             win = dom(pg, lambda: pg.evaluate(
                 "() => [screenX, screenY, outerWidth - innerWidth, outerHeight - innerHeight]"))
         except (OSError, PwError) as e:
@@ -247,7 +247,7 @@ def main():
                 elif how == "row":
                     dom(pg, lambda: row.first.click(timeout=3000))
                 else:
-                    box = dom(pg, lambda: label.bounding_box())
+                    box = dom(pg, lambda: label.bounding_box(timeout=2000))
                     if not box:
                         continue
                     pg.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
@@ -289,6 +289,15 @@ def main():
         say("cookie names:", sorted({c["name"] for c in cookies}))
         say("login cookies:", sorted(LOGIN_COOKIES & {c["name"] for c in cookies if c["value"]}))
 
+    def safe(fn, *args):
+        """A Playwright error in the SMS steps must not crash the script: the scan only lives in
+        this browser (2026-10-29 a 30 s bounding_box timeout killed it with the code in hand)."""
+        try:
+            return fn(*args)
+        except PwError as e:
+            say("STEP_ERROR", fn.__name__, str(e).splitlines()[0][:200])
+            return False
+
     def press_verify(pg):
         """验证: real X11 click first (Playwright clicks didn't take on this dialog), then Playwright, then Enter"""
         for btn in (pg.get_by_role("button", name="验证", exact=True), pg.get_by_text("验证", exact=True)):
@@ -320,7 +329,10 @@ def main():
         # with the keyboard, which goes to whatever got the focus.
         for target in (pg.get_by_placeholder("验证码"), pg.get_by_text("请输入验证码"),
                        pg.locator("input").filter(has_not=pg.locator("[type=hidden]"))):
-            box = dom(pg, lambda: target.first.bounding_box(), default=None)
+            try:  # 2 s, not Playwright's 30 s default -- and a missing element must not kill the login
+                box = dom(pg, lambda: target.first.bounding_box(timeout=2000), default=None)
+            except PwError:
+                box = None
             if not box:
                 continue
             pg.mouse.click(box["x"] + min(box["width"] / 2, 40), box["y"] + box["height"] / 2)
@@ -475,7 +487,7 @@ def main():
                     continue
                 if not sms_asked and "接收短信验证码" in text and sms_tries < 6:
                     sms_tries += 1
-                    if ask_sms(pg):
+                    if safe(ask_sms, pg):
                         sms_asked = True
                         deadline = max(deadline, time.time() + SMS_WAIT)
                         shot = os.path.join(OUT_DIR, f"douyin_verify_{time.strftime('%H%M%S')}.png")
@@ -491,7 +503,7 @@ def main():
                     code = "".join(ch for ch in open(SMS_PATH).read() if ch.isdigit())
                     os.remove(SMS_PATH)
                     if 4 <= len(code) <= 8:
-                        say("SMS_SUBMITTED", code, "->", "ok" if submit_code(pg, code) else "COULD NOT TYPE IT")
+                        say("SMS_SUBMITTED", code, "->", "ok" if safe(submit_code, pg, code) else "COULD NOT TYPE IT")
                         pg.wait_for_timeout(5000)
                         shot = os.path.join(OUT_DIR, f"douyin_verify_{time.strftime('%H%M%S')}.png")
                         dom(pg, lambda: pg.screenshot(path=shot))
