@@ -15,7 +15,9 @@ Prints one status line per event (read them from the background process output):
     QR_REFRESHED <path> <time>   Douyin drew a new QR -> send the new path
     VERIFY <path> <words>        Douyin wants an extra check (身份验证) -> the script picks
                                  接收短信验证码 itself when offered (刷脸 fails on this server)
-    SMS_SENT <path>              SMS code is on its way to the user's phone -> ask for it, then
+    SMS_CLICK_FAILED <path> ..   picked 接收短信验证码 but the page never said 短信已发送; it retries
+                                 (6 tries). After the 6th: XTEST-click it (references/xvfb-browser-control.md)
+    SMS_SENT <path>              the page says 短信已发送 -> the code is on the user's phone: ask for it, then
                                  `echo <code> > ~/.douyin_sms_code` (the script types it + 验证)
     SMS_SUBMITTED <code> -> ok   typed and pressed 验证; SMS_RESULT <path> = screenshot after it
     SMS_BAD_CODE                 the file had no 4-8 digits -> ask again
@@ -159,6 +161,38 @@ def main():
             return True
         except PwError:  # not there / covered: try the next one
             return False
+
+    def sms_on_its_way(pg):
+        """The SMS page says 短信已发送至 ... / 重新发送 once Douyin really sent it"""
+        text = page_text(pg)
+        return any(w in text for w in ("已发送", "重新发送", "后重新获取", "后重发"))
+
+    def ask_sms(pg):
+        """Pick 接收短信验证码 and make sure the SMS really went out. A plain loc.click() once
+        printed SMS_SENT while the page still showed the list of 验证方式 (2026-10-29), so: try
+        the text, the whole option row, and a real mouse click at its centre, and check each time."""
+        label = pg.get_by_text("接收短信验证码").first
+        row = label.locator("xpath=ancestor::*[contains(@class,'item') or @role='button' or "
+                            "contains(@style,'cursor')][1]")
+        for how in ("label", "row", "mouse"):
+            try:
+                if how == "label":
+                    dom(pg, lambda: label.click(timeout=3000))
+                elif how == "row":
+                    dom(pg, lambda: row.first.click(timeout=3000))
+                else:
+                    box = dom(pg, lambda: label.bounding_box())
+                    if not box:
+                        continue
+                    pg.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            except PwError:
+                continue
+            pg.wait_for_timeout(2500)
+            if click(pg, pg.get_by_text("获取验证码", exact=True).first):  # some versions want this too
+                pg.wait_for_timeout(2500)
+            if sms_on_its_way(pg):
+                return True
+        return False
 
     def visible(pg, sel):
         return bool(dom(pg, lambda: pg.locator(sel).first.is_visible(), default=False))
@@ -312,7 +346,7 @@ def main():
         say("QR_READY", path, stamp)
         say("SEND THIS PATH NOW. Douyin replaces it 60 s after", stamp, "-- do not run vision_analyze first.")
         last_src, warned = qr_src(pg), ""
-        verifying, sms_asked = False, False
+        verifying, sms_asked, sms_tries = False, False, 0
         try:
             os.remove(SMS_PATH)  # a code left from an earlier login is useless
         except OSError:
@@ -335,9 +369,9 @@ def main():
                 # "流程错误" on this server; 接收短信验证码 works -> pick it ourselves
                 verifying = True
                 drop_qr_files()
-                if not sms_asked and "接收短信验证码" in text:
-                    if click(pg, pg.get_by_text("接收短信验证码").first):
-                        pg.wait_for_timeout(3000)
+                if not sms_asked and "接收短信验证码" in text and sms_tries < 6:
+                    sms_tries += 1
+                    if ask_sms(pg):
                         sms_asked = True
                         deadline = max(deadline, time.time() + SMS_WAIT)
                         shot = os.path.join(OUT_DIR, f"douyin_verify_{time.strftime('%H%M%S')}.png")
@@ -345,6 +379,10 @@ def main():
                         say("SMS_SENT", shot)
                         say(f"Ask the user for the 6-digit SMS code, then: echo <code> > {SMS_PATH}")
                         continue
+                    shot = os.path.join(OUT_DIR, f"douyin_verify_{time.strftime('%H%M%S')}.png")
+                    dom(pg, lambda: pg.screenshot(path=shot))
+                    say("SMS_CLICK_FAILED", shot, f"try {sms_tries}/6 -- page did not say 短信已发送; trying again")
+                    continue
                 if sms_asked and os.path.exists(SMS_PATH):
                     code = "".join(ch for ch in open(SMS_PATH).read() if ch.isdigit())
                     os.remove(SMS_PATH)
