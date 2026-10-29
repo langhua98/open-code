@@ -61,7 +61,14 @@ When the user shares a Douyin profile link (`v.douyin.com/...`, often "查看TA�
 
 ### QR login flow (verified end-to-end)
 
-Run `scripts/douyin_login_qr.py` in the **background** (`terminal(background=True, notify_on_complete=True)`) because it blocks while polling for the scan, then **read its output right away** (don't `wait` for the process — it runs for minutes):
+Run `scripts/douyin_login_qr.py` in the **background with `watch_patterns`, NOT `notify_on_complete`**:
+`terminal(background=True, watch_patterns=["QR_REFRESHED", "SMS_SENT", "SMS_BAD_CODE", "LOGGED_IN", "TIMEOUT"])`.
+Then `process(action="wait", timeout=20)` once to get the first `QR_READY` line and send that QR at once.
+Why: the script runs for minutes and only exits after login. With `notify_on_complete` you hear nothing
+until then, so you never see `SMS_SENT` or a new QR — that's how a user scanned, got asked for an SMS
+code on the page, and nobody told them (2026-10-29). With `watch_patterns` each of those lines wakes you
+(at most one per 15 s). If the user says 扫了/没收到/怎么样了, run `process(action="log", session_id=...)` and
+act on the newest lines below. Don't `wait` on it for minutes:
 
 ```bash
 export PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers; PY=/opt/mc-venv/bin/python
