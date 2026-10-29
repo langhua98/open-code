@@ -10,3 +10,5 @@ douyin-proxy Space 里的 Hermes（微信助手）自己写的技能，这里放
   现在脚本盯着二维码图片，一换就截新图报 `QR_REFRESHED`；改成虚拟屏幕上的真浏览器（`xvfb-run`，和 Space 里视频爬虫登录抖音同一套办法），
   二维码真加载出来才截图；文件名带生成时间（`/home/user/douyin_qr_<时分秒>.png`），过期、换新、结束时旧图都删掉，
   发不出旧图；`SKILL.md` 让 Hermes 一看到 `QR_READY` 就发，不再先用 vision_analyze 看一遍。
+- `xiaoju-pipeline/`：新技能。把抓到的抖音、快手作品链接或小号主页链接交给 Space 里的小橘视频流水线
+  （`POST $XIAOJU_STREAMER_URL/hermes/links`，流式服务用频道主账号转发给机器人，和频道主自己粘贴链接一样）。
