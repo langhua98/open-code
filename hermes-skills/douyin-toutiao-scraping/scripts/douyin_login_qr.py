@@ -242,6 +242,26 @@ def main():
                         return True
                 dom(pg, lambda: pg.keyboard.press("Enter"))
                 return True
+        # No visible <input> (2026-10-29: COULD NOT TYPE IT): the code field can be a hidden input
+        # behind drawn digit boxes. Click where the page says 请输入验证码 / the boxes, then type
+        # with the keyboard, which goes to whatever got the focus.
+        for target in (pg.get_by_placeholder("验证码"), pg.get_by_text("请输入验证码"),
+                       pg.locator("input").filter(has_not=pg.locator("[type=hidden]"))):
+            box = dom(pg, lambda: target.first.bounding_box(), default=None)
+            if not box:
+                continue
+            pg.mouse.click(box["x"] + min(box["width"] / 2, 40), box["y"] + box["height"] / 2)
+            pg.wait_for_timeout(300)
+            pg.keyboard.type(code, delay=120)
+            pg.wait_for_timeout(800)
+            if code[:2] not in page_text(pg) and not dom(pg, lambda: pg.evaluate(
+                    "c => [...document.querySelectorAll('input')].some(i => i.value.includes(c))", code)):
+                continue  # the keys went nowhere
+            for btn in (pg.get_by_role("button", name="验证", exact=True), pg.get_by_text("验证", exact=True)):
+                if click(pg, btn.filter(visible=True).last):
+                    return True
+            dom(pg, lambda: pg.keyboard.press("Enter"))
+            return True
         return False
 
     def open_login(pg, seconds=20):
