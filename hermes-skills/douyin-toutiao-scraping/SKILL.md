@@ -85,11 +85,35 @@ It re-runs itself under `xvfb-run` (real, headful Chromium on a virtual screen) 
 - `VERIFY <path> <words>` → Douyin wants 身份验证 (new device). The script picks **接收短信验证码** itself (刷脸 ends in 流程错误 here) — wait for the next line.
 - `SMS_CLICK_FAILED <path> try n/6` → it picked 短信 but the page didn't say 短信已发送 yet; it retries by itself (it clicks with the real X11 mouse through XTEST, like `scripts/xinput.py`, so you normally do nothing). Tell the user "短信还没发出去，正在重试". After try 6/6, click 接收短信验证码 yourself with `scripts/xinput.py` (references/xvfb-browser-control.md) and check the page says 短信已发送至.
 - `SMS_SENT <path>` → the page says 短信已发送, so an SMS code is on its way to the user's phone. Ask: "抖音给你发了短信验证码，把 6 位数字发我". When they answer, run `echo <digits> > ~/.douyin_sms_code` — the script types it and presses 验证 (`SMS_SUBMITTED … -> ok`, then `SMS_RESULT <screenshot>`, then `LOGGED_IN` if it passed). Wrong/expired code: ask again and write the file again; the script keeps waiting. **Don't kill the login script and don't click around with XTEST** — see `references/login-verification.md`.
+- `SMS_SUBMITTED <code> -> COULD NOT TYPE IT` → the code was read but the field was unreachable, and the file is
+  already consumed (don't rewrite it). One manual pass on the X11 screen is allowed and **does work** when the
+  「验证」button is hit dead centre: pick its centre from the **pink button's pixel bbox**, not from a vision
+  estimate (a point 10 px off silently does nothing and looks like a dead code), and note `Return` does not
+  submit. Recipe + coords: `references/sms-code-submit-fallback.md` §2.
+
+**The owner's expectations while a QR is live** (stated explicitly, 2026-10-29): check the process output about
+every 10 s after the QR goes out; report each `SMS_SENT` / `SMS_RESULT` / `QR_REFRESHED` / `LOGGED_IN` line
+**verbatim** the moment it appears; when he asks for the `process log`, paste it whole and do nothing else; when
+he sends a code, do exactly one thing — `echo <code> > ~/.douyin_sms_code`. No paraphrase, no summary-in-place.
 - `ALREADY_LOGGED_IN` → no QR needed, cookies refreshed (check `login cookies:` isn't `[]`). `LOGGED_IN` → done. `TIMEOUT` → say so, offer to retry.
 
 **Never send a QR image that is not the path from the newest `QR_READY`/`QR_REFRESHED` line.** Only one `/home/user/douyin_qr_<HHMMSS>.png` exists at a time; the file name is the time it was drawn. If you're unsure, `ls /home/user/douyin_qr_*.png` — no file means no valid QR. The old `/home/user/douyin_qr_crop.png` is obsolete (the script deletes it); never send it.
 
 **Pitfalls found the hard way:**
+- **Leftover `DISPLAY` breaks the scripts that self-bootstrap into xvfb.** After driving the virtual screen
+  by hand (`export DISPLAY=:99 XAUTHORITY=/tmp/xvfb-run.xxx/Xauthority`), that variable stays in the shell.
+  `douyin_keepalive.py` / `daily_hot_videos.py` see `DISPLAY` and skip their own `xvfb-run`, launch headful
+  against a dead display and die with `TargetClosedError: BrowserType.launch` (the real reason only shows
+  under `DEBUG=pw:browser`: `Missing X server or $DISPLAY`). Always run them clean:
+  `env -u DISPLAY -u XAUTHORITY bash ~/.hermes/scripts/<job>.sh` — manual runs fail, cron runs are fine.
+  Details: `references/hot-video-job-failures.md` §2.
+- **`SMS_CLICK_FAILED` ×6 then TIMEOUT (2026-10-29).** The `Open xdg-open?` browser prompt sits *above* the
+  page and swallows every Playwright click on 接收短信验证码, so the script retried 6× and gave up while the
+  page still showed the 验证方式 list. Fix is in the script now: `ask_sms()` sends an X11 `Escape` first
+  (`XTest.key("Escape")`) to dismiss that prompt, then clicks the label through XTEST. If XTEST is
+  unavailable (`libXtst.so.6` missing on a stripped image), `XTest` falls back to shelling out to
+  `scripts/xinput.py` with the system `python3` (needs `python3 -m pip install --user python-xlib`).
+  `/opt/mc-venv` is read-only, so never try to pip-install into it.
 - **60-second QRs.** `get_qrcode` / `check_qrconnect` return `expire_time` = issue + 60 s and the page swaps the image without any notice. The script watches the QR `<img>` src and reports each swap (`QR_EXPIRED` + `QR_REFRESHED`).
 - **Headless = dead QR.** See above. Headful + `xvfb-run` + `--disable-blink-features=AutomationControlled` + MediaCrawler's `stealth.min.js` (`/opt/MediaCrawler/libs/`) is the same recipe the Space's video crawler logs in with.
 - **The QR box first shows only a TikTok logo**; the QR image arrives a few seconds later. The script waits for the real `<img>` (≥100 px) before screenshotting `#animate_qrcode_container`.
@@ -127,6 +151,15 @@ To get found videos/accounts into the owner's Telegram channel, use the `xiaoju-
 **`/tmp` is not writable in this environment** — write QR/screenshots to `/home/user/`. Details and an inline reference implementation in `references/qr-login.md`.
 
 See `references/account-scraping.md` for the full recipe + error transcripts, and `scripts/douyin_user_crawl.py` for a re-runnable Playwright crawler.
+
+**Local playbooks — read the matching one *before* retrying a failing step.** They live only in this skill dir,
+so a GitHub sync of `SKILL.md` does not remove them:
+`references/login-state-loss.md` (登录态丢失 / 假登录 / home 被重置后先跑保活) ·
+`references/search-entry-captcha.md` (搜索只能从首页搜索框进；批量搜会静默掉到 0) ·
+`references/sms-code-submit-fallback.md` (短信点不中、填码崩溃、滞后通知、XTEST 坐标) ·
+`references/video-mp4-direct-link.md` (mp4 直链 + ~3 h TTL) ·
+`references/hot-video-job-failures.md` (每日热点视频 0 条 / core_dep、保活并发崩溃) ·
+`references/syncing-from-github.md` (同步规矩与会被覆盖的文件).
 
 ## Steps
 1. Use **Python `requests`** (the box may not have `curl` — don't assume it does). `pip install requests` if missing.

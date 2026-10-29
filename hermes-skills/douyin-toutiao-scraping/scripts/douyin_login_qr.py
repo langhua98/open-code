@@ -117,25 +117,45 @@ class XTest:
     XTEST on the same spot did -- so the script does that itself now."""
 
     def __init__(self):
-        import ctypes
-        import ctypes.util
-        self.x11 = ctypes.CDLL(ctypes.util.find_library("X11") or "libX11.so.6")
-        self.xt = ctypes.CDLL(ctypes.util.find_library("Xtst") or "libXtst.so.6")
-        self.x11.XOpenDisplay.restype = ctypes.c_void_p
-        self.x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
-        self.x11.XFlush.argtypes = [ctypes.c_void_p]
-        self.x11.XStringToKeysym.restype = ctypes.c_ulong
-        self.x11.XStringToKeysym.argtypes = [ctypes.c_char_p]
-        self.x11.XKeysymToKeycode.restype = ctypes.c_ubyte
-        self.x11.XKeysymToKeycode.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
-        self.xt.XTestFakeMotionEvent.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_ulong]
-        self.xt.XTestFakeButtonEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_ulong]
-        self.xt.XTestFakeKeyEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_ulong]
-        self.d = self.x11.XOpenDisplay(None)
-        if not self.d:
-            raise OSError("no X display")
+        self.last_error = None
+        try:
+            import ctypes
+            import ctypes.util
+            self.x11 = ctypes.CDLL(ctypes.util.find_library("X11") or "libX11.so.6")
+            self.xt = ctypes.CDLL(ctypes.util.find_library("Xtst") or "libXtst.so.6")
+            self.x11.XOpenDisplay.restype = ctypes.c_void_p
+            self.x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+            self.x11.XFlush.argtypes = [ctypes.c_void_p]
+            self.x11.XStringToKeysym.restype = ctypes.c_ulong
+            self.x11.XStringToKeysym.argtypes = [ctypes.c_char_p]
+            self.x11.XKeysymToKeycode.restype = ctypes.c_ubyte
+            self.x11.XKeysymToKeycode.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+            self.xt.XTestFakeMotionEvent.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_ulong]
+            self.xt.XTestFakeButtonEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_ulong]
+            self.xt.XTestFakeKeyEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_ulong]
+            self.d = self.x11.XOpenDisplay(None)
+            if not self.d:
+                raise OSError("no X display")
+            self.backend = "xtst"
+            return
+        except Exception as e:      # libXtst.so.6 missing on this box (2026-10-29)
+            self.last_error = e
+        import shutil
+        helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "xinput.py")
+        py = shutil.which("python3")
+        if not (py and os.path.exists(helper)):
+            raise OSError(f"no XTEST backend: {self.last_error}; and no xinput.py")
+        self.py, self.helper, self.backend = py, helper, "shell"
+
+    def _sh(self, *args):
+        import subprocess
+        subprocess.run([self.py, self.helper, *args], timeout=20,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def click(self, x, y):
+        if self.backend == "shell":
+            self._sh("click", str(int(x)), str(int(y)))
+            return
         self.xt.XTestFakeMotionEvent(self.d, -1, int(x), int(y), 0)
         self.x11.XFlush(self.d)
         time.sleep(0.15)
@@ -144,7 +164,21 @@ class XTest:
             self.x11.XFlush(self.d)
             time.sleep(0.08)
 
+    def key(self, name):
+        if self.backend == "shell":
+            self._sh("key", name)
+            return
+        code = self.x11.XKeysymToKeycode(self.d, self.x11.XStringToKeysym(name.encode()))
+        for down in (1, 0):
+            self.xt.XTestFakeKeyEvent(self.d, code, down, 0)
+            self.x11.XFlush(self.d)
+            time.sleep(0.06)
+
     def type(self, text):
+        if self.backend == "shell":
+            for ch in text:
+                self._sh("key", ch)
+            return
         for ch in text:
             code = self.x11.XKeysymToKeycode(self.d, self.x11.XStringToKeysym(ch.encode()))
             for down in (1, 0):
@@ -235,6 +269,13 @@ def main():
         a real X11 click (XTEST, the one that worked), then the text, the whole option row and a
         Playwright mouse click, and check the page each time."""
         label = pg.get_by_text("接收短信验证码").filter(visible=True).first
+        try:   # a browser-level "Open xdg-open?" prompt sits above the page and swallows clicks
+            if not xtest:
+                xtest.append(XTest())
+            xtest[0].key("Escape")
+            pg.wait_for_timeout(700)
+        except OSError as e:
+            say("XTEST unavailable:", e)
         row = label.locator("xpath=ancestor::*[contains(@class,'item') or @role='button' or "
                             "contains(@style,'cursor')][1]")
         for how in ("xtest", "label", "row", "mouse"):
