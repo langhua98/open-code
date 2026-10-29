@@ -16,8 +16,11 @@ each because the chat had 249 messages of history. Cache hits make it cheaper, n
    the JSON to re-summarise it, don't screenshot to "check".
 3. **`vision_analyze` only when the text can't tell you** (an unknown dialog). Never on a QR code
    (it ate half of a 60-s QR's life). One look, then act.
-4. **Long jobs in the background, short replies.** Start it with `background=true`, tell the user
-   "开始了，大约 N 分钟" once, then reply when it's done. No progress chatter.
+4. **Long jobs: say where you are, briefly.** The user can't see you working and thinks you're stuck.
+   Start long things with `background=true` and say "开始了，大约 N 分钟" once. Before each big step
+   (登录、抓作品、搜索、交给流水线) write ONE short line in the same reply as the tool call, e.g.
+   "第 2/3 步：抓作品，大约 3 分钟" — WeChat shows these as you go. Not one per tool call, and no
+   long explanations. The gateway also sends "⏳ Working — N min" every 5 minutes by itself.
 5. **Trim output.** Pipe noisy commands through `| tail -30`; don't `cat` big files — `head`/`grep` them.
 6. **Fail fast.** If the same approach failed twice, stop and tell the user what failed instead of
    trying ten variations.
