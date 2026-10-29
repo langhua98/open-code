@@ -389,6 +389,15 @@ def main():
                 # "流程错误" on this server; 接收短信验证码 works -> pick it ourselves
                 verifying = True
                 drop_qr_files()
+                if not sms_asked and sms_tries >= 6 and sms_on_its_way(pg):
+                    # someone clicked 接收短信验证码 by hand (XTEST): pick the code up from the file too
+                    sms_asked = True
+                    deadline = max(deadline, time.time() + SMS_WAIT)
+                    shot = os.path.join(OUT_DIR, f"douyin_verify_{time.strftime('%H%M%S')}.png")
+                    dom(pg, lambda: pg.screenshot(path=shot))
+                    say("SMS_SENT", shot, "(clicked by hand)")
+                    say(f"Ask the user for the 6-digit SMS code, then: echo <code> > {SMS_PATH}")
+                    continue
                 if not sms_asked and "接收短信验证码" in text and sms_tries < 6:
                     sms_tries += 1
                     if ask_sms(pg):
