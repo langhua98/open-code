@@ -62,7 +62,7 @@ When the user shares a Douyin profile link (`v.douyin.com/...`, often "查看TA�
 ### QR login flow (verified end-to-end)
 
 Run `scripts/douyin_login_qr.py` in the **background with `watch_patterns`, NOT `notify_on_complete`**:
-`terminal(background=True, watch_patterns=["QR_REFRESHED", "SMS_SENT", "SMS_CLICK_FAILED", "SMS_BAD_CODE", "LOGGED_IN", "TIMEOUT"])`.
+`terminal(background=True, watch_patterns=["QR_REFRESHED", "SMS_SENT", "SMS_CLICK_FAILED", "SMS_BAD_CODE", "SMS_RESULT", "LOGGED_IN", "TIMEOUT"])`.
 Then `process(action="wait", timeout=20)` once to get the first `QR_READY` line and send that QR at once.
 Why: the script runs for minutes and only exits after login. With `notify_on_complete` you hear nothing
 until then, so you never see `SMS_SENT` or a new QR — that's how a user scanned, got asked for an SMS
@@ -83,7 +83,7 @@ It re-runs itself under `xvfb-run` (real, headful Chromium on a virtual screen) 
 - `QR_REFRESHED <path> <time>` → comes about every 60 s until the user scans. Send the new path at once, say "上一张过期了，扫这张".
 - `QR_NOT_LOADED <path>` → the QR never appeared. Don't send anything to scan; tell the user and offer to retry.
 - `VERIFY <path> <words>` → Douyin wants 身份验证 (new device). The script picks **接收短信验证码** itself (刷脸 ends in 流程错误 here) — wait for the next line.
-- `SMS_CLICK_FAILED <path> try n/6` → it picked 短信 but the page didn't say 短信已发送 yet; it retries by itself. Tell the user "短信还没发出去，正在重试". After try 6/6, click 接收短信验证码 yourself with `scripts/xinput.py` (references/xvfb-browser-control.md) and check the page says 短信已发送至.
+- `SMS_CLICK_FAILED <path> try n/6` → it picked 短信 but the page didn't say 短信已发送 yet; it retries by itself (it clicks with the real X11 mouse through XTEST, like `scripts/xinput.py`, so you normally do nothing). Tell the user "短信还没发出去，正在重试". After try 6/6, click 接收短信验证码 yourself with `scripts/xinput.py` (references/xvfb-browser-control.md) and check the page says 短信已发送至.
 - `SMS_SENT <path>` → the page says 短信已发送, so an SMS code is on its way to the user's phone. Ask: "抖音给你发了短信验证码，把 6 位数字发我". When they answer, run `echo <digits> > ~/.douyin_sms_code` — the script types it and presses 验证 (`SMS_SUBMITTED … -> ok`, then `SMS_RESULT <screenshot>`, then `LOGGED_IN` if it passed). Wrong/expired code: ask again and write the file again; the script keeps waiting. **Don't kill the login script and don't click around with XTEST** — see `references/login-verification.md`.
 - `ALREADY_LOGGED_IN` → no QR needed, cookies refreshed (check `login cookies:` isn't `[]`). `LOGGED_IN` → done. `TIMEOUT` → say so, offer to retry.
 

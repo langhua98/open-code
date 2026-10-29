@@ -111,6 +111,49 @@ def under_display():
     os.execv(xvfb, [xvfb, "-a", "-s", "-screen 0 1280x900x24", sys.executable, *sys.argv])
 
 
+class XTest:
+    """Real mouse/keyboard on the xvfb screen through libXtst (ctypes, nothing to pip install).
+    On 2026-10-29 Playwright clicks on 接收短信验证码 never sent the SMS, while a click through
+    XTEST on the same spot did -- so the script does that itself now."""
+
+    def __init__(self):
+        import ctypes
+        import ctypes.util
+        self.x11 = ctypes.CDLL(ctypes.util.find_library("X11") or "libX11.so.6")
+        self.xt = ctypes.CDLL(ctypes.util.find_library("Xtst") or "libXtst.so.6")
+        self.x11.XOpenDisplay.restype = ctypes.c_void_p
+        self.x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        self.x11.XFlush.argtypes = [ctypes.c_void_p]
+        self.x11.XStringToKeysym.restype = ctypes.c_ulong
+        self.x11.XStringToKeysym.argtypes = [ctypes.c_char_p]
+        self.x11.XKeysymToKeycode.restype = ctypes.c_ubyte
+        self.x11.XKeysymToKeycode.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        self.xt.XTestFakeMotionEvent.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_ulong]
+        self.xt.XTestFakeButtonEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_ulong]
+        self.xt.XTestFakeKeyEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_ulong]
+        self.d = self.x11.XOpenDisplay(None)
+        if not self.d:
+            raise OSError("no X display")
+
+    def click(self, x, y):
+        self.xt.XTestFakeMotionEvent(self.d, -1, int(x), int(y), 0)
+        self.x11.XFlush(self.d)
+        time.sleep(0.15)
+        for down in (1, 0):
+            self.xt.XTestFakeButtonEvent(self.d, 1, down, 0)
+            self.x11.XFlush(self.d)
+            time.sleep(0.08)
+
+    def type(self, text):
+        for ch in text:
+            code = self.x11.XKeysymToKeycode(self.d, self.x11.XStringToKeysym(ch.encode()))
+            for down in (1, 0):
+                self.xt.XTestFakeKeyEvent(self.d, code, down, 0)
+                self.x11.XFlush(self.d)
+                time.sleep(0.06)
+            time.sleep(0.08)
+
+
 def kill_previous():
     try:
         old = int(open(PID_PATH).read().strip())
@@ -167,16 +210,39 @@ def main():
         text = page_text(pg)
         return any(w in text for w in ("已发送", "重新发送", "后重新获取", "后重发"))
 
+    xtest = []  # opened on first use
+
+    def xclick(pg, loc):
+        """Click the centre of a page element with the real X11 mouse; False if that can't be done."""
+        try:
+            if not xtest:
+                xtest.append(XTest())
+            box = dom(pg, lambda: loc.bounding_box())
+            win = dom(pg, lambda: pg.evaluate(
+                "() => [screenX, screenY, outerWidth - innerWidth, outerHeight - innerHeight]"))
+        except (OSError, PwError) as e:
+            say("XTEST unavailable:", e)
+            return False
+        if not box or not win:
+            return False
+        sx, sy, dw, dh = win
+        xtest[0].click(sx + dw / 2 + box["x"] + box["width"] / 2, sy + dh + box["y"] + box["height"] / 2)
+        return True
+
     def ask_sms(pg):
         """Pick 接收短信验证码 and make sure the SMS really went out. A plain loc.click() once
         printed SMS_SENT while the page still showed the list of 验证方式 (2026-10-29), so: try
-        the text, the whole option row, and a real mouse click at its centre, and check each time."""
-        label = pg.get_by_text("接收短信验证码").first
+        a real X11 click (XTEST, the one that worked), then the text, the whole option row and a
+        Playwright mouse click, and check the page each time."""
+        label = pg.get_by_text("接收短信验证码").filter(visible=True).first
         row = label.locator("xpath=ancestor::*[contains(@class,'item') or @role='button' or "
                             "contains(@style,'cursor')][1]")
-        for how in ("label", "row", "mouse"):
+        for how in ("xtest", "label", "row", "mouse"):
             try:
-                if how == "label":
+                if how == "xtest":
+                    if not xclick(pg, label):
+                        continue
+                elif how == "label":
                     dom(pg, lambda: label.click(timeout=3000))
                 elif how == "row":
                     dom(pg, lambda: row.first.click(timeout=3000))
@@ -223,6 +289,18 @@ def main():
         say("cookie names:", sorted({c["name"] for c in cookies}))
         say("login cookies:", sorted(LOGIN_COOKIES & {c["name"] for c in cookies if c["value"]}))
 
+    def press_verify(pg):
+        """验证: real X11 click first (Playwright clicks didn't take on this dialog), then Playwright, then Enter"""
+        for btn in (pg.get_by_role("button", name="验证", exact=True), pg.get_by_text("验证", exact=True)):
+            b = btn.filter(visible=True).last
+            if dom(pg, b.count, default=0) and xclick(pg, b):
+                return True
+        for btn in (pg.get_by_role("button", name="验证", exact=True), pg.get_by_text("验证", exact=True)):
+            if click(pg, btn.filter(visible=True).last):
+                return True
+        dom(pg, lambda: pg.keyboard.press("Enter"))
+        return True
+
     def submit_code(pg, code):
         """Type the SMS code into the 接收短信验证码 dialog and press 验证."""
         for sel in ("input[placeholder*='验证码']", "input[type='tel']", "input[type='number']",
@@ -236,12 +314,7 @@ def main():
                 except PwError:
                     continue
                 pg.wait_for_timeout(800)
-                for btn in (pg.get_by_role("button", name="验证", exact=True),
-                            pg.get_by_text("验证", exact=True)):
-                    if click(pg, btn.filter(visible=True).last):
-                        return True
-                dom(pg, lambda: pg.keyboard.press("Enter"))
-                return True
+                return press_verify(pg)
         # No visible <input> (2026-10-29: COULD NOT TYPE IT): the code field can be a hidden input
         # behind drawn digit boxes. Click where the page says 请输入验证码 / the boxes, then type
         # with the keyboard, which goes to whatever got the focus.
@@ -254,14 +327,16 @@ def main():
             pg.wait_for_timeout(300)
             pg.keyboard.type(code, delay=120)
             pg.wait_for_timeout(800)
-            if code[:2] not in page_text(pg) and not dom(pg, lambda: pg.evaluate(
-                    "c => [...document.querySelectorAll('input')].some(i => i.value.includes(c))", code)):
+            def typed():
+                return bool(dom(pg, lambda: pg.evaluate(
+                    "c => [...document.querySelectorAll('input')].some(i => i.value.includes(c))", code)))
+            if not typed() and xclick(pg, target.first):  # try the real X11 mouse + keyboard
+                pg.wait_for_timeout(300)
+                xtest[0].type(code)
+                pg.wait_for_timeout(800)
+            if not typed():
                 continue  # the keys went nowhere
-            for btn in (pg.get_by_role("button", name="验证", exact=True), pg.get_by_text("验证", exact=True)):
-                if click(pg, btn.filter(visible=True).last):
-                    return True
-            dom(pg, lambda: pg.keyboard.press("Enter"))
-            return True
+            return press_verify(pg)
         return False
 
     def open_login(pg, seconds=20):
