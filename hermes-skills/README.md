@@ -19,3 +19,7 @@ douyin-proxy Space 里的 Hermes（微信助手）自己写的技能，这里放
     `references/login-verification.md` 重写：以前要求"同步后重打补丁"，现在不用打了。
   - `daily-jobs/`：每日热榜、抖音登录保活，都是 no_agent 定时任务，脚本的输出直接发给用户，不经过大模型。
   - `token-frugal/`：省 token 的规矩，外加闲置 2 小时自动开新会话（`session_reset`）。
+- `free-media-gen/`：免费生图和图生视频（2026-10-29）。`gen_image.py`：Pollinations 免费出图（不要 key，同一 IP 45 秒一张，
+  脚本自己等），失败了用 HF 的 Z-Image-Turbo（中文提示词、能在图里写中文字）。`img2video.py`：HF ZeroGPU 上的
+  Wan 2.2 快速版，失败了换 LTX-Video。视频和 Z-Image 要用户自己的 HF 免费 token（存 `~/.hermes/hf_token`），
+  免费账号每天有几分钟 GPU 时间。
