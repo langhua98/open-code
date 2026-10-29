@@ -17,5 +17,5 @@ douyin-proxy Space 里的 Hermes（微信助手）自己写的技能，这里放
     二维码点刷新没反应时重新加载页面。`douyin_user_works_cdp.py`（一句话抓全部作品：表格 + 现成的摘要）、
     `douyin_search_cdp.py`（关键词搜索，按最新发布或最多点赞排，可限定 N 天内）。
     `references/login-verification.md` 重写：以前要求"同步后重打补丁"，现在不用打了。
-  - `daily-jobs/`：每日热榜、抖音登录保活，都是 no_agent 定时任务，脚本的输出直接发给用户，不经过大模型。
+  - `daily-jobs/`：每日抖音热点前 10 条视频（直接发视频文件）、抖音登录保活，都是 no_agent 定时任务，脚本的输出直接发给用户，不经过大模型。
   - `token-frugal/`：省 token 的规矩，外加闲置 2 小时自动开新会话（`session_reset`）。
