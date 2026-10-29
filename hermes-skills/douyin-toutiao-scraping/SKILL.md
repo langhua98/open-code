@@ -31,20 +31,19 @@ Returns `{"data": [...]}` where each item has `Title`, `Url`, `ClusterId`, `Labe
 
 ## Account / 作品 scraping (share link → sec_uid → headless browser)
 
-### Step 0 — Playwright setup when `--with-deps` can't run
+### Step 0 — which Python to use
 
-On a box without root, `python3 -m playwright install --with-deps chromium` dies with
-`su: Authentication failure`, and the default download dir is unwritable
-(`EACCES: permission denied, mkdir '/opt/pw-browsers/__dirlock'`). Working recipe:
+On the 小橘 Space use the image's own venv: `/opt/mc-venv/bin/python` already has Playwright and
+`requests`, and its Chromium is in `/opt/pw-browsers`. Both survive restarts. Anything you
+`pip install` into plain `python3` or download to `~/.cache` is **gone after every restart**
+(that's why the 抖音登录保活 cron once died with `No module named 'playwright'`). So in every shell:
 
 ```bash
-python3 -m pip install playwright requests
-export PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright   # same shell as the run
-python3 -m playwright install chromium        # NO --with-deps (that step needs root)
+export PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
+PY=/opt/mc-venv/bin/python
 ```
-Only `pip install playwright` on its own is not enough — the browser binary is a separate download.
-Verify with `ls $PLAYWRIGHT_BROWSERS_PATH` → expect `chromium-1248`, `chromium_headless_shell-1248`, `ffmpeg-1013`.
-If launch then complains about missing system libs, use `launch(headless=True, args=["--no-sandbox"])`.
+Don't install Playwright again. Only on another box without that venv: `python3 -m pip install playwright requests`,
+`PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright python3 -m playwright install chromium` (never `--with-deps`, it needs root).
 
 When the user shares a Douyin profile link (`v.douyin.com/...`, often "查看TA的更多作品"), the working flow:
 
@@ -65,8 +64,8 @@ When the user shares a Douyin profile link (`v.douyin.com/...`, often "查看TA�
 Run `scripts/douyin_login_qr.py` in the **background** (`terminal(background=True, notify_on_complete=True)`) because it blocks while polling for the scan, then **read its output right away** (don't `wait` for the process — it runs for minutes):
 
 ```bash
-export PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright
-DOUYIN_SEC_UID=<sec_uid> python3 scripts/douyin_login_qr.py 300
+export PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers; PY=/opt/mc-venv/bin/python
+DOUYIN_SEC_UID=<sec_uid> $PY scripts/douyin_login_qr.py 300
 ```
 
 It re-runs itself under `xvfb-run` (real, headful Chromium on a virtual screen) — Douyin kills QRs from headless Chromium almost immediately, that's why the user saw "二维码已过期" right after scanning. Never switch it back to headless, never hand-write a new login script.
@@ -97,8 +96,8 @@ It re-runs itself under `xvfb-run` (real, headful Chromium on a virtual screen) 
 When the user sends a profile link and wants its videos:
 ```bash
 cd ~/.hermes/skills/web-scraping/douyin-toutiao-scraping
-export PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright
-python3 scripts/douyin_user_works_cdp.py "<sec_uid or https://www.douyin.com/user/... link>"
+export PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers; PY=/opt/mc-venv/bin/python
+$PY scripts/douyin_user_works_cdp.py "<sec_uid or https://www.douyin.com/user/... link>"
 ```
 (`v.douyin.com/...` short link: resolve it first — read the 302 `Location` with `allow_redirects=False`, `sec_uid` is in it.)
 Verified 193/193 with a real login. When it ends, forward the text between `SUMMARY_BEGIN` and `SUMMARY_END` **as is** plus `MEDIA:/home/user/douyin_works.csv`. Don't re-read the JSON or take screenshots — the summary already has top 5 by likes, latest 5 and links. Needs the real login (`NO_SESSION_COOKIE` → log in first).
@@ -107,8 +106,8 @@ Verified 193/193 with a real login. When it ends, forward the text between `SUMM
 
 Logged-in search still ranks by the user's taste; **sorting by 最新发布 within a time window** is what shows videos the feed never would:
 ```bash
-python3 scripts/douyin_search_cdp.py "贵州 赶集" 30 --days 7      # 最新发布，一周内
-python3 scripts/douyin_search_cdp.py "非遗 手艺" 50 --days 180 --hot   # 最多点赞，半年内
+$PY scripts/douyin_search_cdp.py "贵州 赶集" 30 --days 7      # 最新发布，一周内
+$PY scripts/douyin_search_cdp.py "非遗 手艺" 50 --days 180 --hot   # 最多点赞，半年内
 ```
 Forward `SUMMARY_BEGIN..SUMMARY_END` + `MEDIA:/home/user/douyin_search.csv`. The `SORT seen` line says which sort/time the page really used — if it's not what was asked, say so. Not verified end-to-end yet (written without a test login): if it returns 0, send `/home/user/douyin_search.png` and report.
 **Only search keywords the user gave you.** Never pick keywords yourself and run them (the owner cancelled a run where you did). If the user asks vaguely, *suggest* a few (topics they never watch like 非遗手艺、县城纪录; place + daily life like 新疆 放牧、贵州 赶集; small hashtags) and wait for them to choose.
@@ -131,7 +130,7 @@ See `references/account-scraping.md` for the full recipe + error transcripts, an
 - **Double `data` nesting**: data is at `resp["data"]["data"]["word_list"]`, not `resp["data"]["word_list"]`. If `word_list` comes back `None`, print `list(resp.keys())` and `list(resp["data"].keys())` to inspect structure before guessing.
 - **Hot list is a mixed bag**: news + entertainment + hashtag challenges + drama marketing. Don't present it as pure "news" — it's the native Douyin 热榜 flavor.
 - **Anti-scrape reality**: hot-list/search endpoints usually work unsigned; but account videos, comment dumps, and full detail pages typically need signed params and login. Probe first, then tell the user honestly what's reachable vs. what needs credentials.
-- **Uninstalled ≠ unavailable**: if `playwright`/`requests` are missing, install them (`pip install playwright requests`, then `PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright python3 -m playwright install chromium` — never `--with-deps`, it needs root). See `references/account-scraping.md` §0.
+- **Uninstalled ≠ unavailable**: if `playwright`/`requests` seem missing, you are on the wrong Python: use `/opt/mc-venv/bin/python` (Step 0).
 
 ## Scripts
 - `scripts/douyin_hot.py` — re-runnable fetcher that prints the ranked hot list. Copy and modify for new targets (e.g. swap the URL for Toutiao, or extend `word_list` parsing to other fields).
