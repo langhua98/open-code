@@ -13,8 +13,12 @@ Prints one status line per event (read them from the background process output):
                                  it works for 60 seconds only
     QR_EXPIRED <path>            that QR is dead and its file is deleted -- don't send it again
     QR_REFRESHED <path> <time>   Douyin drew a new QR -> send the new path
-    VERIFY <path> <words>        Douyin wants an extra check (SMS/face) -> send the screenshot,
-                                 tell the user to follow the prompt in the 抖音 App
+    VERIFY <path> <words>        Douyin wants an extra check (身份验证) -> the script picks
+                                 接收短信验证码 itself when offered (刷脸 fails on this server)
+    SMS_SENT <path>              SMS code is on its way to the user's phone -> ask for it, then
+                                 `echo <code> > ~/.douyin_sms_code` (the script types it + 验证)
+    SMS_SUBMITTED <code> -> ok   typed and pressed 验证; SMS_RESULT <path> = screenshot after it
+    SMS_BAD_CODE                 the file had no 4-8 digits -> ask again
     LOGGED_IN                    login confirmed, cookies saved
     QR_NOT_LOADED <path>         the QR image never arrived (box shows only the logo) -- send
                                  nothing to scan; tell the user and offer to retry
@@ -66,6 +70,8 @@ import time
 COOKIE_PATH = os.path.expanduser("~/.douyin_cookies.json")
 STATE_PATH = os.path.expanduser("~/.douyin_state.json")
 PID_PATH = os.path.expanduser("~/.douyin_login.pid")
+SMS_PATH = os.path.expanduser("~/.douyin_sms_code")  # Hermes writes the SMS code here
+SMS_WAIT = 300  # after the SMS is sent, wait at least this long for the user's code
 OUT_DIR = "/home/user"
 QR_GLOB = os.path.join(OUT_DIR, "douyin_qr_*.png")
 STEALTH = ["/opt/MediaCrawler/libs/stealth.min.js", "libs/stealth.min.js"]
@@ -183,6 +189,27 @@ def main():
         say("cookie names:", sorted({c["name"] for c in cookies}))
         say("login cookies:", sorted(LOGIN_COOKIES & {c["name"] for c in cookies if c["value"]}))
 
+    def submit_code(pg, code):
+        """Type the SMS code into the 接收短信验证码 dialog and press 验证."""
+        for sel in ("input[placeholder*='验证码']", "input[type='tel']", "input[type='number']",
+                    "input[inputmode='numeric']"):
+            box = pg.locator(sel).filter(visible=True)
+            if dom(pg, box.count, default=0):
+                try:
+                    dom(pg, lambda: box.first.click(timeout=3000))
+                    dom(pg, lambda: box.first.fill(""))
+                    dom(pg, lambda: box.first.type(code, delay=120))  # typed, so the page sees key events
+                except PwError:
+                    continue
+                pg.wait_for_timeout(800)
+                for btn in (pg.get_by_role("button", name="验证", exact=True),
+                            pg.get_by_text("验证", exact=True)):
+                    if click(pg, btn.filter(visible=True).last):
+                        return True
+                dom(pg, lambda: pg.keyboard.press("Enter"))
+                return True
+        return False
+
     def open_login(pg, seconds=20):
         """The panel usually pops up by itself a few seconds after load; if not, click 登录."""
         end = time.time() + seconds
@@ -285,6 +312,11 @@ def main():
         say("QR_READY", path, stamp)
         say("SEND THIS PATH NOW. Douyin replaces it 60 s after", stamp, "-- do not run vision_analyze first.")
         last_src, warned = qr_src(pg), ""
+        verifying, sms_asked = False, False
+        try:
+            os.remove(SMS_PATH)  # a code left from an earlier login is useless
+        except OSError:
+            pass
 
         deadline = time.time() + wait_seconds
         while time.time() < deadline:
@@ -298,21 +330,62 @@ def main():
                 return
             text = page_text(pg)
             words = [w for w in VERIFY_WORDS if w in text]
-            if words and ",".join(words) != warned:
-                warned = ",".join(words)
-                shot = os.path.join(OUT_DIR, f"douyin_verify_{time.strftime('%H%M%S')}.png")
-                dom(pg, lambda: pg.screenshot(path=shot))
-                say("VERIFY", shot, warned)
+            if words or sms_asked:
+                # scanned + confirmed, now Douyin wants 身份验证 (new device). 刷脸 ends in
+                # "流程错误" on this server; 接收短信验证码 works -> pick it ourselves
+                verifying = True
+                drop_qr_files()
+                if not sms_asked and "接收短信验证码" in text:
+                    if click(pg, pg.get_by_text("接收短信验证码").first):
+                        pg.wait_for_timeout(3000)
+                        sms_asked = True
+                        deadline = max(deadline, time.time() + SMS_WAIT)
+                        shot = os.path.join(OUT_DIR, f"douyin_verify_{time.strftime('%H%M%S')}.png")
+                        dom(pg, lambda: pg.screenshot(path=shot))
+                        say("SMS_SENT", shot)
+                        say(f"Ask the user for the 6-digit SMS code, then: echo <code> > {SMS_PATH}")
+                        continue
+                if sms_asked and os.path.exists(SMS_PATH):
+                    code = "".join(ch for ch in open(SMS_PATH).read() if ch.isdigit())
+                    os.remove(SMS_PATH)
+                    if 4 <= len(code) <= 8:
+                        say("SMS_SUBMITTED", code, "->", "ok" if submit_code(pg, code) else "COULD NOT TYPE IT")
+                        pg.wait_for_timeout(5000)
+                        shot = os.path.join(OUT_DIR, f"douyin_verify_{time.strftime('%H%M%S')}.png")
+                        dom(pg, lambda: pg.screenshot(path=shot))
+                        say("SMS_RESULT", shot, "(LOGGED_IN follows if it worked)")
+                    else:
+                        say("SMS_BAD_CODE", repr(code), "-- need the 4-8 digits from the SMS")
+                    continue
+                if words and ",".join(words) != warned:
+                    warned = ",".join(words)
+                    shot = os.path.join(OUT_DIR, f"douyin_verify_{time.strftime('%H%M%S')}.png")
+                    dom(pg, lambda: pg.screenshot(path=shot))
+                    say("VERIFY", shot, warned)
                 continue
+            if verifying:
+                continue  # the QR is gone for good once 身份验证 started
             if any(w in text for w in EXPIRED_WORDS) and visible(pg, QR_BOX):
-                # older page versions grey the QR out and show a refresh button
+                # older page versions grey the QR out and show a refresh button.
+                # Clicking 刷新 often does NOTHING (modal stays 已过期, <img> src unchanged)
+                # -> reload the page and reopen the login panel to get a fresh code
                 say("QR_EXPIRED", path)
                 drop_qr_files()
+                path = None
                 for w in ("点击刷新", "刷新"):
                     if click(pg, pg.get_by_text(w).first):
                         break
                 pg.wait_for_timeout(1500)
-                open_login(pg, seconds=5)
+                src_after = qr_src(pg)
+                if not src_after or src_after == last_src:
+                    dom(pg, lambda: pg.reload(wait_until="domcontentloaded"))
+                    pg.wait_for_timeout(4000)
+                    open_login(pg, seconds=10)
+                path, stamp = snap_qr(pg)
+                last_src = qr_src(pg)
+                if path:
+                    say("QR_REFRESHED", path, stamp)
+                continue
             src = qr_src(pg)
             if src and src != last_src:
                 # Douyin silently swaps the QR every 60 s (check_qrconnect hands out a new one,
