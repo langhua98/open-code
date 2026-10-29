@@ -111,7 +111,7 @@ python3 scripts/douyin_search_cdp.py "贵州 赶集" 30 --days 7      # 最新�
 python3 scripts/douyin_search_cdp.py "非遗 手艺" 50 --days 180 --hot   # 最多点赞，半年内
 ```
 Forward `SUMMARY_BEGIN..SUMMARY_END` + `MEDIA:/home/user/douyin_search.csv`. The `SORT seen` line says which sort/time the page really used — if it's not what was asked, say so. Not verified end-to-end yet (written without a test login): if it returns 0, send `/home/user/douyin_search.png` and report.
-Good queries for "videos my feed never shows": topics the user never watches (非遗手艺、县城纪录、冷门科普), place + daily life (新疆 放牧、东北 林场、贵州 赶集), small hashtags. Suggest a few when the user asks vaguely.
+**Only search keywords the user gave you.** Never pick keywords yourself and run them (the owner cancelled a run where you did). If the user asks vaguely, *suggest* a few (topics they never watch like 非遗手艺、县城纪录; place + daily life like 新疆 放牧、贵州 赶集; small hashtags) and wait for them to choose.
 
 ### Into the 小橘视频 pipeline
 
