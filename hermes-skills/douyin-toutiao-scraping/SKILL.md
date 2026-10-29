@@ -76,7 +76,8 @@ It re-runs itself under `xvfb-run` (real, headful Chromium on a virtual screen) 
 - `QR_EXPIRED <path>` → that QR is dead (60 s passed) and its file is deleted. Don't send it, don't send any older image.
 - `QR_REFRESHED <path> <time>` → comes about every 60 s until the user scans. Send the new path at once, say "上一张过期了，扫这张".
 - `QR_NOT_LOADED <path>` → the QR never appeared. Don't send anything to scan; tell the user and offer to retry.
-- `VERIFY <path> <words>` → Douyin wants an extra check (SMS / 刷脸). Send the screenshot and tell the user to follow the prompt in the 抖音 App.
+- `VERIFY <path> <words>` → Douyin wants 身份验证 (new device). The script picks **接收短信验证码** itself (刷脸 ends in 流程错误 here) — wait for the next line.
+- `SMS_SENT <path>` → an SMS code is on its way to the user's phone. Ask: "抖音给你发了短信验证码，把 6 位数字发我". When they answer, run `echo <digits> > ~/.douyin_sms_code` — the script types it and presses 验证 (`SMS_SUBMITTED … -> ok`, then `SMS_RESULT <screenshot>`, then `LOGGED_IN` if it passed). Wrong/expired code: ask again and write the file again; the script keeps waiting. **Don't kill the login script and don't click around with XTEST** — see `references/login-verification.md`.
 - `ALREADY_LOGGED_IN` → no QR needed, cookies refreshed (check `login cookies:` isn't `[]`). `LOGGED_IN` → done. `TIMEOUT` → say so, offer to retry.
 
 **Never send a QR image that is not the path from the newest `QR_READY`/`QR_REFRESHED` line.** Only one `/home/user/douyin_qr_<HHMMSS>.png` exists at a time; the file name is the time it was drawn. If you're unsure, `ls /home/user/douyin_qr_*.png` — no file means no valid QR. The old `/home/user/douyin_qr_crop.png` is obsolete (the script deletes it); never send it.
@@ -90,6 +91,31 @@ It re-runs itself under `xvfb-run` (real, headful Chromium on a virtual screen) 
 - **`Execution context was destroyed, most likely because of a navigation`** — Douyin reloads right after the scan is confirmed and right after load with a saved login. The script's `dom()` helper waits and retries; check `ctx.cookies()` first.
 - **One run at a time**: the script stops any earlier run of itself (pid file `~/.douyin_login.pid`). Don't start a second one while the first is still waiting for a scan — re-running means a new QR and the old one is dead.
 - **Keep the user informed**: send the QR the moment it prints and reply in the chat; don't sit in a long tool loop without answering.
+
+### One message → full works list (fixed script, cheap)
+
+When the user sends a profile link and wants its videos:
+```bash
+cd ~/.hermes/skills/web-scraping/douyin-toutiao-scraping
+export PLAYWRIGHT_BROWSERS_PATH=/home/user/.cache/ms-playwright
+python3 scripts/douyin_user_works_cdp.py "<sec_uid or https://www.douyin.com/user/... link>"
+```
+(`v.douyin.com/...` short link: resolve it first — read the 302 `Location` with `allow_redirects=False`, `sec_uid` is in it.)
+Verified 193/193 with a real login. When it ends, forward the text between `SUMMARY_BEGIN` and `SUMMARY_END` **as is** plus `MEDIA:/home/user/douyin_works.csv`. Don't re-read the JSON or take screenshots — the summary already has top 5 by likes, latest 5 and links. Needs the real login (`NO_SESSION_COOKIE` → log in first).
+
+### Keyword search, newest first (out of the 信息茧房)
+
+Logged-in search still ranks by the user's taste; **sorting by 最新发布 within a time window** is what shows videos the feed never would:
+```bash
+python3 scripts/douyin_search_cdp.py "贵州 赶集" 30 --days 7      # 最新发布，一周内
+python3 scripts/douyin_search_cdp.py "非遗 手艺" 50 --days 180 --hot   # 最多点赞，半年内
+```
+Forward `SUMMARY_BEGIN..SUMMARY_END` + `MEDIA:/home/user/douyin_search.csv`. The `SORT seen` line says which sort/time the page really used — if it's not what was asked, say so. Not verified end-to-end yet (written without a test login): if it returns 0, send `/home/user/douyin_search.png` and report.
+Good queries for "videos my feed never shows": topics the user never watches (非遗手艺、县城纪录、冷门科普), place + daily life (新疆 放牧、东北 林场、贵州 赶集), small hashtags. Suggest a few when the user asks vaguely.
+
+### Into the 小橘视频 pipeline
+
+To get found videos/accounts into the owner's Telegram channel, use the `xiaoju-pipeline` skill (`POST $XIAOJU_STREAMER_URL/hermes/links`): video links go to review, profile links become 小号. Take the links from the CSV `url` / `author_url` columns.
 
 **`/tmp` is not writable in this environment** — write QR/screenshots to `/home/user/`. Details and an inline reference implementation in `references/qr-login.md`.
 
@@ -110,7 +136,9 @@ See `references/account-scraping.md` for the full recipe + error transcripts, an
 ## Scripts
 - `scripts/douyin_hot.py` — re-runnable fetcher that prints the ranked hot list. Copy and modify for new targets (e.g. swap the URL for Toutiao, or extend `word_list` parsing to other fields).
 - `scripts/douyin_user_crawl.py` — Playwright crawler that renders a profile from a `sec_uid` (or resolves a `v.douyin.com` short link) and extracts account stats + works. Needs `pip install playwright` and a Chromium build.
-- `scripts/douyin_login_qr.py` — generates a scannable login QR (headful Chromium under xvfb, element screenshot, timestamped file), polls for the scan, and saves `~/.douyin_cookies.json` + `~/.douyin_state.json`. Run it in the background. Companion notes: `references/qr-login.md`.
+- `scripts/douyin_user_works_cdp.py` — a profile's full works list (CDP response bodies), CSV + ready summary.
+- `scripts/douyin_search_cdp.py` — keyword search, newest/most-liked within N days, CSV + summary.
+- `scripts/douyin_login_qr.py` — generates a scannable login QR (headful Chromium under xvfb, element screenshot, timestamped file), handles the 短信 身份验证, polls for the scan, and saves `~/.douyin_cookies.json` + `~/.douyin_state.json`. Run it in the background. Companion notes: `references/qr-login.md`.
 
 ## Extending
 For comments/individual video detail pages, probe `aweme/v1/web/...` endpoints the same way (UA + Referer) and check for `status_code`/`status_msg` signaling a signing requirement. For account profiles, use the headless-browser path above. Offer to wire any successful fetcher into a `cronjob` for daily push (e.g. "每天早上 9 点推当天抖音热点到微信").
