@@ -7,8 +7,9 @@
 
 手动跑：bash ~/.hermes/scripts/daily_hot_videos.sh [N]
 
-怎么拿视频：热榜接口（不用登录）每条带一个代表作品号 group_id。用 ~/.douyin_state.json 里的真登录
-开 www.douyin.com/video/<作品号>，从页面自己的 aweme/detail 回包（CDP Network.getResponseBody，
+怎么拿视频：热榜接口（不用登录）每条带一个 sentence_id。用 ~/.douyin_state.json 里的真登录
+开 www.douyin.com/hot/<sentence_id>，抖音会跳到这条热点当前的头条视频 /video/<作品号>（热榜里的
+group_id 常常是几年前的老作品号，直接开会 core_dep 或拿不到数据，只在没跳转时兜底用），从页面自己的 aweme/detail 回包（CDP Network.getResponseBody，
 跟 douyin_user_works_cdp.py 一样）或页面里的 RENDER_DATA 取视频地址，下载到 /home/user/hot_videos/。
 微信发文件有超时（定时任务每个文件 30 秒），所以挑不超过 LIMIT_MB 的清晰度；都超了就用 ffmpeg 压到 540p。
 
@@ -134,13 +135,30 @@ def shrink(path):
     return False
 
 
-def grab(ctx, pg, cdp, bodies, aweme_id, path):
-    """开作品页，拿到作品数据，下载视频。成功返回 None，失败返回原因"""
+def open_video(pg, sentence_id, group_id):
+    """开热点页，等它跳到头条视频，返回作品号；没跳转就退回去开 group_id 的作品页"""
+    if sentence_id:
+        pg.goto(f"https://www.douyin.com/hot/{sentence_id}", wait_until="domcontentloaded", timeout=45000)
+        for _ in range(15):
+            m = re.search(r"/video/(\d{6,25})", pg.url)
+            if m:
+                return m.group(1)
+            pg.wait_for_timeout(1000)
+    if not group_id:
+        return None
+    pg.goto(f"https://www.douyin.com/video/{group_id}", wait_until="domcontentloaded", timeout=45000)
+    return group_id
+
+
+def grab(ctx, pg, cdp, bodies, sentence_id, group_id, path):
+    """开热点的头条视频，拿到作品数据，下载视频。成功返回 None，失败返回原因"""
     bodies.clear()
     try:
-        pg.goto(f"https://www.douyin.com/video/{aweme_id}", wait_until="domcontentloaded", timeout=45000)
+        aweme_id = open_video(pg, sentence_id, group_id)
     except Exception as e:  # noqa: BLE001
         return f"打不开作品页（{type(e).__name__}）"
+    if not aweme_id:
+        return "没有视频"
     aweme = None
     for _ in range(15):
         pg.wait_for_timeout(1000)
@@ -241,13 +259,13 @@ def main():
         for i, w in enumerate(words, 1):
             word = (w.get("word") or "").strip()
             lines.append(f"{i}. {word}  🔥{heat(w.get('hot_value'))}")
-            aweme_id = str(w.get("group_id") or "")
-            if not re.fullmatch(r"\d{6,25}", aweme_id):
-                missed.append(f"{i}（没有视频）")
-                continue
-            safe = re.sub(r'[\\/:*?"<>|\s]+', "", word)[:20] or aweme_id
+            sentence_id = str(w.get("sentence_id") or "")
+            group_id = str(w.get("group_id") or "")
+            sentence_id = sentence_id if re.fullmatch(r"\d{1,25}", sentence_id) else ""
+            group_id = group_id if re.fullmatch(r"\d{6,25}", group_id) else ""
+            safe = re.sub(r'[\\/:*?"<>|\s]+', "", word)[:20] or str(i)
             path = os.path.join(OUT_DIR, f"{i:02d}_{safe}.mp4")
-            why = grab(ctx, pg, cdp, bodies, aweme_id, path)
+            why = grab(ctx, pg, cdp, bodies, sentence_id, group_id, path)
             log(i, word, "ok" if why is None else why)
             if why is None:
                 media.append(path)
