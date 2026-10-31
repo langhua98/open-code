@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Install or update claude-mem for OpenCode (https://github.com/thedotmack/claude-mem).
+# Called by .devcontainer/setup.sh; safe to run again. After running it: web restart
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# The version this repository was tested with. Change it here to upgrade.
+version=15.7.0
+
+# Keep memories, settings and logs under /workspaces, which survives "Rebuild Container".
+mem="$HOME/.claude-mem" kept=/workspaces/.claude-mem
+if [ -d /workspaces ] && [ ! -L "$mem" ]; then
+  mkdir -p "$kept" 2>/dev/null || { sudo -n mkdir -p "$kept" && sudo -n chown "$(id -u):$(id -g)" "$kept"; }
+  if [ -d "$mem" ]; then cp -an "$mem/." "$kept/" && rm -rf "$mem"; fi
+  ln -s "$kept" "$mem"
+fi
+mkdir -p "$mem/"
+
+# Memory notes are written by DeepSeek's API. The key itself is never saved here: OpenCode passes
+# CLAUDE_MEM_OPENAI_COMPAT_API_KEY (= the DEEPSEEK_API_KEY secret, see tools/web) on to the worker.
+# No Claude login exists in the codespace, so do not fall back to Claude when DeepSeek fails.
+python3 - "$mem/settings.json" <<'PY'
+import json, os, sys
+path = sys.argv[1]
+settings = {}
+if os.path.exists(path):
+    with open(path) as f:
+        settings = json.load(f)
+settings.update({
+    "CLAUDE_MEM_PROVIDER": "openai-compatible",
+    "CLAUDE_MEM_OPENAI_COMPAT_PRESET": "deepseek",
+    "CLAUDE_MEM_OPENAI_COMPAT_BASE_URL": "https://api.deepseek.com/v1",
+    "CLAUDE_MEM_OPENAI_COMPAT_MODEL": "deepseek-chat",
+    "CLAUDE_MEM_QUOTA_FALLBACK_PROVIDER": "off",
+})
+with open(path, "w") as f:
+    json.dump(settings, f, indent=2)
+PY
+
+# Writes the plugin and its MCP server into ~/.config/opencode/opencode.json (merged with this
+# repository's opencode.json) and installs its runtime (Bun, uv). ONLINE_OPTIN=false: no cmem.ai sign-in.
+export CLAUDE_MEM_ONLINE_OPTIN=false CLAUDE_MEM_TELEMETRY=0
+npx -y "claude-mem@$version" install --ide opencode </dev/null
+npx -y "claude-mem@$version" telemetry disable </dev/null >/dev/null || true
+
+# Hand the DeepSeek key to `opencode` started from a terminal too (tools/web does it for the web UI).
+line='export CLAUDE_MEM_OPENAI_COMPAT_API_KEY="${CLAUDE_MEM_OPENAI_COMPAT_API_KEY:-${DEEPSEEK_API_KEY:-}}"'
+grep -qxF "$line" "$HOME/.bashrc" 2>/dev/null || echo "$line" >>"$HOME/.bashrc"

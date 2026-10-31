@@ -18,7 +18,9 @@
   "remoteEnv": {
     "PATH": "${containerWorkspaceFolder}/tools:${containerEnv:PATH}",
     // Superpowers: don't load its logo from the author's site (version ping) in the brainstorming visual companion.
-    "SUPERPOWERS_DISABLE_TELEMETRY": "1"
+    "SUPERPOWERS_DISABLE_TELEMETRY": "1",
+    // claude-mem: no usage statistics sent to its author.
+    "CLAUDE_MEM_TELEMETRY": "0"
   },
   // Codespaces asks for these when creating a codespace and injects them as environment variables.
   "secrets": {

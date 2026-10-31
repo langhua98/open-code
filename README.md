@@ -140,6 +140,7 @@ kgpu quota                        # 本周 GPU 配额
 | `.devcontainer/` | Codespaces 配置：Python 3.12 + Node + Docker，自动安装 OpenCode、浏览器、`gh`、文档处理库和 Kaggle CLI，每次连上后启动 Web 界面 |
 | `docs/` | 手机入口页（GitHub Pages）：<https://langhua98.github.io/open-code/>，一点唤醒 Codespace、打开 OpenCode |
 | `tools/web` | 启动 OpenCode 网页版（终端里输入 `web`，重启用 `web restart`），并显示手机上要打开的网址；把聊天记录放在 `/workspaces/.opencode-data`，重建容器也不丢 |
+| `tools/claude-mem-setup` | 安装 [claude-mem](https://github.com/thedotmack/claude-mem)（v15.7.0），让 OpenCode 记住以前的会话：每次会话自动整理成笔记（用 DeepSeek，和 OpenCode 同一个 key），新会话开始时带上相关的笔记。记忆存在 `/workspaces/.claude-mem`，重建容器也不丢。创建 Codespace 时自动安装；已有的 Codespace 运行 `git pull && claude-mem-setup && web restart` |
 | `tools/kgpu` | Kaggle GPU 运行器 |
 | `kgpu.toml` | Kaggle 运行配置：默认命令、GPU 型号、联网、超时、数据集和模型挂载 |
 | `requirements-gpu.txt` | Kaggle 上额外安装的 pip 包 |
