@@ -53,6 +53,9 @@ keep_chats() {
 }
 keep_chats
 
+# claude-mem (tools/claude-mem-setup) writes its memory notes with DeepSeek: pass it the same key.
+export CLAUDE_MEM_OPENAI_COMPAT_API_KEY="${CLAUDE_MEM_OPENAI_COMPAT_API_KEY:-${DEEPSEEK_API_KEY:-}}"
+
 # Web search for every model, not only the ones from the OpenCode provider.
 export OPENCODE_ENABLE_EXA=1
 

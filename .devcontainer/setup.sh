@@ -37,6 +37,12 @@ echo "==> Installing Python libraries for documents and charts"
 python3 -m pip install --disable-pip-version-check --no-cache-dir --upgrade \
   pypdf python-docx openpyxl python-pptx pandas matplotlib
 
+echo "==> Installing claude-mem (OpenCode remembers past sessions)"
+# https://github.com/thedotmack/claude-mem : an OpenCode plugin plus a local worker that turns each
+# session into short notes (with DeepSeek, the same key as OpenCode) and feeds the relevant ones into
+# later sessions. Everything stays in ~/.claude-mem; it is kept under /workspaces so a rebuild keeps it.
+bash tools/claude-mem-setup || echo "claude-mem setup failed; OpenCode still works without it. Re-run: bash tools/claude-mem-setup"
+
 echo "==> Installed"
 opencode --version
 python3 -m kaggle --version
