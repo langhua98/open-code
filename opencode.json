@@ -8,9 +8,9 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "Mac 本地模型",
       "options": {
-        "baseURL": "https://ai.langhua98.workers.dev/v1",
+        "baseURL": "https://thinly-remake-vitamins.ngrok-free.dev/v1",
         "apiKey": "{env:LOCAL_LLM_API_KEY}",
-        "headers": { "X-Offline-Notice": "1" }
+        "headers": { "X-Offline-Notice": "1", "ngrok-skip-browser-warning": "1" }
       },
       "models": {
         "qwen3.5:9b": {
