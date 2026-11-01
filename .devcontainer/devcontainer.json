@@ -30,6 +30,9 @@
       "description": "DeepSeek API key (starts with sk-). OpenCode's default model is DeepSeek and reads this variable.",
       "documentationUrl": "https://platform.deepseek.com/api_keys"
     },
+    "LOCAL_LLM_API_KEY": {
+      "description": "Optional. API_KEY from ~/ollama-api/.env on William's Mac, for the local qwen3:8b model (mac/qwen3:8b in OpenCode)."
+    },
     "OPENCODE_SERVER_PASSWORD": {
       "description": "Optional password for the OpenCode web UI on port 4096 (username: opencode)."
     }
