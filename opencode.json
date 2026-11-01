@@ -9,7 +9,8 @@
       "name": "Mac 本地模型",
       "options": {
         "baseURL": "https://ai.langhua98.workers.dev/v1",
-        "apiKey": "{env:LOCAL_LLM_API_KEY}"
+        "apiKey": "{env:LOCAL_LLM_API_KEY}",
+        "headers": { "X-Offline-Notice": "1" }
       },
       "models": {
         "qwen3.5:9b": {
