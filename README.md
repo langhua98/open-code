@@ -149,6 +149,7 @@ kgpu quota                        # 本周 GPU 配额
 | `.opencode/commands/gpu.md` | OpenCode 的 `/gpu` 命令 |
 | `.opencode/skills/` | OpenCode 的技能：代码审查、安全检查、上网调研、处理文档 |
 | `opencode.json` | OpenCode 项目配置：默认 DeepSeek 模型、隐藏 Copilot、接上浏览器工具（默认不加载，交给 `browser` 代理用）、装上 [Superpowers](https://github.com/obra/superpowers) 技能插件（v6.4.2） |
+| `spaces/comfyui/` | 部署到 Hugging Face Docker Space 的 ComfyUI（要付费 GPU），步骤见里面的 README |
 | `tests/` | `kgpu` 的单元测试：`python3 -m unittest discover -s tests` |
 
 ## 额度与注意事项
