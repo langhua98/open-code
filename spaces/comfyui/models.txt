@@ -1,0 +1,6 @@
+# Models downloaded when the Space starts (skipped if already there).
+# Format: <models subfolder> <Hugging Face repo id> <file path in repo>
+# Subfolders: checkpoints, loras, vae, text_encoders, diffusion_models, controlnet, upscale_models ...
+# Gated models (e.g. FLUX dev) need the HF_TOKEN secret and the license accepted on huggingface.co.
+
+checkpoints  Comfy-Org/stable-diffusion-v1-5-archive  v1-5-pruned-emaonly-fp16.safetensors
