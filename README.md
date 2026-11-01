@@ -61,6 +61,10 @@ Token 只存在 Codespaces secrets 里，**不要写进仓库里的任何文件*
   - 想省钱，可以点输入框下方的模型名，换成 DeepSeek V4.1 Flash。
   - 如果提示没有 key 或认证失败，检查 secret 是否已添加、Codespace 是否已重新加载；也可以在 OpenCode 里输入 `/connect`，选 DeepSeek，临时粘贴 key。
   - 余额用完时，可以换一个 OpenCode Zen 的免费模型（标着「免费」的），不需要 key。
+  - **Mac 本地模型**：模型列表里的 **Mac 本地模型 → Qwen3 8B（Mac 本地）**（`mac/qwen3:8b`）是 William 的 Mac 上用 Ollama 跑的 qwen3:8b，走固定地址 `https://ai.langhua98.workers.dev/v1`（OpenAI 兼容接口），不花钱。key 从环境变量 `LOCAL_LLM_API_KEY` 读取，值就是 Mac 上 `~/ollama-api/.env` 里的 `API_KEY`：Codespaces 里加成 Codespaces secret，HF Space 上加成 Space secret。默认关掉了思考（`reasoningEffort: none`），回得快。
+    - OpenCode 每次光系统提示和工具说明就有一万多 token，Ollama 默认的 4096 上下文装不下。Mac 上要把 Ollama 的上下文调到 32768（Ollama 设置里的 Context length，或者 `OLLAMA_CONTEXT_LENGTH=32768`），和 `opencode.json` 里的 `limit.context` 对上。
+    - Mac 睡眠、关机或断网时这个模型会返回 503，换回 DeepSeek 就行。
+    - 8B 小模型能力有限，适合简单问答、改小段代码；步骤多的活还是用 DeepSeek。
   - GitHub Copilot 已经在 `opencode.json` 的 `disabled_providers` 里隐藏了，因为 Copilot 免费版不包含 Claude Sonnet 这类模型，选了只会报错。以后如果订阅了 Copilot Pro，把 `"github-copilot"` 从这个列表里删掉就能用。
 
 ### OpenCode 能用的工具
@@ -148,7 +152,7 @@ kgpu quota                        # 本周 GPU 配额
 | `AGENTS.md` | 给 OpenCode 的项目规则：开发闭环、节省 GPU 配额、不泄露密钥 |
 | `.opencode/commands/gpu.md` | OpenCode 的 `/gpu` 命令 |
 | `.opencode/skills/` | OpenCode 的技能：代码审查、安全检查、上网调研、处理文档 |
-| `opencode.json` | OpenCode 项目配置：默认 DeepSeek 模型、隐藏 Copilot、接上浏览器工具（默认不加载，交给 `browser` 代理用）、装上 [Superpowers](https://github.com/obra/superpowers) 技能插件（v6.4.2） |
+| `opencode.json` | OpenCode 项目配置：默认 DeepSeek 模型、可选的 Mac 本地模型（`mac/qwen3:8b`）、隐藏 Copilot、接上浏览器工具（默认不加载，交给 `browser` 代理用）、装上 [Superpowers](https://github.com/obra/superpowers) 技能插件（v6.4.2） |
 | `tests/` | `kgpu` 的单元测试：`python3 -m unittest discover -s tests` |
 
 ## 额度与注意事项
