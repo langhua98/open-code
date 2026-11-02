@@ -133,6 +133,24 @@ def git_blob_sha(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
+def gh_content_sha256(g: dict, api: str, blob_sha: str, cache: dict) -> str | None:
+    """取 GitHub 上已有文件的 sha256（用来和云盘元数据直接比对，不消耗小桔分享配额）。"""
+    if blob_sha in cache:
+        return cache[blob_sha]
+    r = requests.get(f"{api}/git/blobs/{blob_sha}", headers=g, timeout=TIMEOUT)
+    if r.status_code != 200:
+        cache[blob_sha] = None
+        return None
+    try:
+        data = base64.b64decode(r.json().get("content", ""))
+    except Exception:
+        cache[blob_sha] = None
+        return None
+    sha = hashlib.sha256(data).hexdigest()
+    cache[blob_sha] = sha
+    return sha
+
+
 # ---------------------------------------------------------------- 主流程
 
 def main() -> None:
@@ -160,8 +178,10 @@ def main() -> None:
     tree = gh(requests.get(f"{api}/git/trees/{base_tree}", headers=g, params={"recursive": "1"}, timeout=TIMEOUT))
     repo_blobs = {e["path"]: e for e in tree.get("tree", []) if e.get("type") == "blob"}
 
-    # 3. 对比：大小不同直接算变更；大小相同才下载核对内容
+    # 3. 对比：大小不同直接算变更；大小相同才核对内容
+    #    核对优先用云盘元数据里的 sha256 对 GitHub 上的文件，不建分享（分享每天有配额）
     added, changed, payload = [], [], {}
+    sha_cache: dict = {}
     for rel in sorted(remote_files):
         item = remote_files[rel]
         cur = repo_blobs.get(rel)
@@ -169,16 +189,23 @@ def main() -> None:
             data = xj_download(xh, item)
             added.append(rel)
             payload[rel] = data
-        elif cur.get("size") != item.get("size"):
+            continue
+        if cur.get("size") != item.get("size"):
             data = xj_download(xh, item)
             changed.append(rel)
             payload[rel] = data
-        else:
-            data = xj_download(xh, item)
-            if git_blob_sha(data) == cur["sha"]:
-                continue
-            changed.append(rel)
-            payload[rel] = data
+            continue
+
+        expected = item.get("sha256")
+        if expected and gh_content_sha256(g, api, cur["sha"], sha_cache) == expected:
+            continue  # 内容完全一致，一次下载都不做
+
+        data = xj_download(xh, item)
+        if git_blob_sha(data) == cur["sha"] or (
+                expected and hashlib.sha256(data).hexdigest() == expected):
+            continue
+        changed.append(rel)
+        payload[rel] = data
 
     if not added and not changed:
         print(json.dumps({"added": [], "changed": [], "unchanged": len(remote_files),
