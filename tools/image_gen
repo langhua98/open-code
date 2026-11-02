@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""image_gen: generate images with Cloudflare Workers AI (free daily quota).
+
+    image_gen "a cat sitting by a window"                write to outputs/ and print the path
+    image_gen --size 512x512 --steps 4 "..."             size and steps (default 1024x1024, 4 steps)
+    image_gen --out outputs/foo.png "..."                custom output path
+
+Credentials come from the environment (HuggingFace Space secrets):
+    CLOUDFLARE_ACCOUNT_ID   your Cloudflare account id
+    CLOUDFLARE_API_TOKEN    a Workers AI token (Workers AI Read + Edit)
+
+Model: @cf/black-forest-labs/flux-1-schnell (Apache 2.0, ~173 free images/day).
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+MODEL = "@cf/black-forest-labs/flux-1-schnell"
+API = "https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}"
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    account = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+    token = os.environ.get("CLOUDFLARE_API_TOKEN")
+    if not account or not token:
+        print(
+            "image_gen: 缺少 Cloudflare 凭证。\n"
+            "  1. 打开 https://dash.cloudflare.com/?to=/:account/ai/workers-ai -> Use REST API\n"
+            "     记下 Account ID，并 Create a Workers AI API Token\n"
+            "  2. 在 Space 的 Settings → Secrets 里加两个 secret：\n"
+            "     CLOUDFLARE_ACCOUNT_ID 和 CLOUDFLARE_API_TOKEN\n"
+            "  3. 重启 Space；或临时执行 export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...",
+            file=sys.stderr,
+        )
+        return 2
+
+    width, height = (int(x) for x in args.size.lower().split("x"))
+    body = json.dumps(
+        {
+            "prompt": args.prompt,
+            "steps": args.steps,
+            "width": width,
+            "height": height,
+        }
+    )
+    url = API.format(account=account, model=MODEL)
+    request = urllib.request.Request(
+        url,
+        data=body.encode(),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    started = time.time()
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            data = json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")
+        print(f"image_gen: HTTP {error.code}: {detail}", file=sys.stderr)
+        return 1
+    except urllib.error.URLError as error:
+        print(f"image_gen: 网络错误: {error.reason}", file=sys.stderr)
+        return 1
+
+    if not data.get("success"):
+        print(f"image_gen: Cloudflare 返回错误: {data.get('errors')}", file=sys.stderr)
+        return 1
+
+    image = data.get("result", {}).get("image")
+    if not image:
+        print(f"image_gen: 响应里没有图片: {json.dumps(data)[:500]}", file=sys.stderr)
+        return 1
+
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(base64.b64decode(image))
+    print(f"{out}  ({out.stat().st_size} bytes, {time.time() - started:.1f}s)")
+    return 0
+
+
+def parse_args(argv: list[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="image_gen",
+        description=__doc__.split("\n\n")[0],
+        epilog="\n".join(__doc__.split("\n\n")[1:4]),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("prompt", help="image prompt")
+    parser.add_argument("--size", default="1024x1024", help="WIDTHxHEIGHT (default 1024x1024)")
+    parser.add_argument("--steps", type=int, default=4, help="inference steps 1-8 (default 4)")
+    parser.add_argument("--out", default=None, help="output PNG path (default outputs/image_<ts>.png)")
+    args = parser.parse_args(argv)
+    if args.out is None:
+        args.out = f"outputs/image_{int(time.time())}.png"
+    return args
+
+
+if __name__ == "__main__":
+    sys.exit(main())
