@@ -20,12 +20,18 @@ python3 tools/xiaoju_sync.py             # 推送并开 PR
 
 ## 令牌
 
-脚本从环境变量读取，不要写进命令以外的文件：
+- `XIAOJU_TOKEN`：小桔云盘令牌（需要 `files:read`、`files:download`）。环境变量里通常没有，先问用户；会话记录里可能有：`grep -ao "xa_[A-Za-z0-9_-]\{30,\}" ~/.local/share/opencode/opencode-v2.db* | head -1`
+- `GITHUB_TOKEN`：**必须显式用 `$(cat ~/.config/opencode/github_token)`**。环境变量里那个 fine-grained 令牌只能读，推送会 403。
+- 文件令牌丢了就重走设备授权，步骤见 `AGENTS.md` 的「令牌丢失怎么恢复」。
+- 不要把令牌打进日志或回复里。
 
-- `XIAOJU_TOKEN`：小桔云盘令牌（需要 `files:read`、`files:download`）
-- `GITHUB_TOKEN`：GitHub 令牌；没有时会自动读 `~/.config/opencode/github_token`
+完整命令：
 
-`XIAOJU_TOKEN` 没设置时，直接问用户要，不要凭记忆猜，也不要把令牌打进日志或回复里。
+```bash
+cd /home/user/open-code
+XIAOJU_TOKEN=<小桔令牌> GITHUB_TOKEN=$(cat ~/.config/opencode/github_token) \
+  python3 tools/xiaoju_sync.py --dry-run
+```
 
 ## 看输出
 
