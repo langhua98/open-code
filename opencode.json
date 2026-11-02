@@ -14,9 +14,16 @@
       },
       "models": {
         "qwen3.5:9b": {
-          "name": "Qwen3.5 9B（Mac 本地）",
+          "name": "Qwen3.5 9B 快速（Mac 本地）",
           "limit": { "context": 65536, "output": 8192 },
           "options": { "reasoningEffort": "none" }
+        },
+        "qwen3.5:9b-think": {
+          "id": "qwen3.5:9b",
+          "name": "Qwen3.5 9B 思考（Mac 本地）",
+          "reasoning": true,
+          "limit": { "context": 65536, "output": 16384 },
+          "options": { "reasoningEffort": "high" }
         }
       }
     }
