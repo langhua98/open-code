@@ -39,8 +39,22 @@
 - **GitHub**：`gh` 命令，已用 `GITHUB_TOKEN`（环境变量/Secret）登录，可以操作本仓库的 Issue、PR 和 Actions。推送代码、开 PR、合并之前，先问用户。
 - **Docker**：`docker` 命令，需要重建过容器才有（先运行 `docker info` 确认）。
 - **文档和图表**：已经装好 Python 库 pypdf、python-docx、openpyxl、python-pptx、pandas、matplotlib。生成的文件放到 `outputs/`。
-- **技能**（`.opencode/skills/`）：`code-review` 审查改动，`security-review` 安全检查，`web-research` 上网调研，`documents` 处理 PDF、Word、Excel、PPT 和图表。遇到对应的任务时，先用 `skill` 工具加载。
+- **技能**（`.opencode/skills/`）：`code-review` 审查改动，`security-review` 安全检查，`web-research` 上网调研，`documents` 处理 PDF、Word、Excel、PPT 和图表，`sync-meta-work` 同步小桔云盘（见下节）。遇到对应的任务时，先用 `skill` 工具加载。
 - **Superpowers 技能**（`opencode.json` 里的插件，锁定 v6.4.2）：`brainstorming` 先问清需求再动手，`writing-plans` / `executing-plans` 写计划、按计划做，`test-driven-development` 先写测试，`systematic-debugging` 系统排查 bug，`verification-before-completion` 做完先验证，等等。用 `skill` 工具列出和加载。
+
+## 小桔云盘 → GitHub 同步
+
+固定任务，只跑脚本，**不要手写 GitHub API**（`/commits/main` 的 `tree.sha` 在 `commit.tree.sha` 里、PR 的 `head` 不能等于 `base`，这些坑都踩过）。
+
+```bash
+python3 tools/xiaoju_sync.py --dry-run   # 先看差异
+python3 tools/xiaoju_sync.py             # 推送并开 PR
+```
+
+- 令牌：`XIAOJU_TOKEN`（小桔，需要 `files:read` / `files:download`），`GITHUB_TOKEN`（没有则自动读 `~/.config/opencode/github_token`）。缺了问用户要，不要猜、不要打印。
+- 最后一行是 JSON（`added` / `changed` / `pr_url`），照实转告用户。
+- 合并要用户另外说；只有明确同意才加 `--merge`。
+- 出错（退出码 1 + `{"error":...}`）就把原文报告，不要改脚本重试。细节见 `sync-meta-work` 技能。
 
 ## 规则
 

@@ -18,3 +18,6 @@ access_token
 
 # Screenshots and downloads from OpenCode's browser tool
 .playwright-mcp/
+
+# 小桔云盘同步下来的本地副本
+downloads/
