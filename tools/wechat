@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# 微信 ClawBot：扫码绑定、查看状态、发测试消息。
+#
+#   wechat bind     扫码绑定（会打印一个链接，用手机微信打开它完成绑定）
+#   wechat status   查看绑定状态
+#   wechat send ... 给已绑定的微信发一条消息
+#   wechat logs     看桥接日志
+#
+# 桥接本身由 opencode 启动时自动拉起（见 ~/.config/opencode/plugin/wechat-bridge.js）。
+# 状态目录：~/.opencode-wechat
+set -euo pipefail
+cd "$(dirname "$0")/.." || exit 1
+
+PKG="${OPENCODE_WECHAT_PKG:-$HOME/.cache/opencode/packages/opencode-wechat-bridge@latest/node_modules/opencode-wechat-bridge}"
+STATE="${OPENCODE_WECHAT_STATE_DIR:-$HOME/.opencode-wechat}"
+NODE="$HOME/.local/node/bin/node"
+[ -x "$NODE" ] || NODE="$(command -v node)"
+
+case "${1:-}" in
+  bind)
+    exec env PKG_DIR="$PKG" STATE_DIR="$STATE" "$NODE" --input-type=module -e '
+      import fs from "node:fs"
+      const { login } = await import(`file://${process.env.PKG_DIR}/dist/src/weixin/auth.js`)
+      const qrFile = `${process.env.STATE_DIR}/qr-url.txt`
+      for (;;) {
+        try {
+          const token = await login({
+            baseUrl: process.env.OPENCODE_WECHAT_BASE_URL || "https://ilinkai.weixin.qq.com",
+            storageDir: process.env.STATE_DIR,
+            log: (msg) => console.log(`[bind] ${msg}`),
+            renderQrUrl: (url) => {
+              fs.writeFileSync(qrFile, url + "\n", { mode: 0o600 })
+              console.log(`\n[${new Date().toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai" })}] 最新链接（约 5 分钟内有效）：`)
+              console.log(`\n${url}\n`)
+              console.log("用手机微信打开上面的链接完成授权；也可以放到另一台设备上显示成二维码再扫。")
+            },
+          })
+          fs.rmSync(qrFile, { force: true })
+          console.log(`\n绑定成功：bot=${token.accountId} userId=${token.userId}`)
+          console.log("接下来在微信里给这个机器人发一条消息，就会记住你的回复目标。")
+          break
+        } catch (e) {
+          console.log(`\n[bind] ${e.message}；重新生成二维码...`)
+          await new Promise((r) => setTimeout(r, 1000))
+        }
+      }
+    '
+    ;;
+  status)
+    exec "$NODE" "$PKG/dist/src/bridge/cli.js" status
+    ;;
+  send)
+    shift
+    exec "$NODE" "$PKG/dist/src/bridge/cli.js" send "$@"
+    ;;
+  logs)
+    tail -n "${2:-50}" "$STATE/bridge.log"
+    ;;
+  *)
+    sed -n '2,11p' "$0"
+    exit 64
+    ;;
+esac
