@@ -13,12 +13,25 @@ if [ -n "${CODESPACE_NAME:-}" ]; then
   url="https://${CODESPACE_NAME}-4096.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}"
 fi
 
+# The image has no procps (no pkill/pgrep/ps), so scan /proc ourselves.
+pids_matching() {
+  local pat="$1" pid
+  for pid in /proc/[0-9]*; do
+    [ -r "$pid/cmdline" ] || continue
+    tr '\0' ' ' <"$pid/cmdline" 2>/dev/null | grep -qF "$pat" && echo "${pid#/proc/}"
+  done
+}
+
 if [ "${1:-}" = "restart" ]; then
-  pkill -f "opencode serve --port 4096"
-  # Wait until it has exited and released the port (an exiting process vanishes from pgrep
-  # slightly before its socket closes).
+  # Also stop the WeChat bridge's own loopback backend (4095): it is restarted by the
+  # wechat plugin on the next start and picks up config changes that way.
+  for pid in $(pids_matching "opencode serve --port 4096") $(pids_matching "opencode serve --port 4095"); do
+    kill "$pid" 2>/dev/null
+  done
+  # Wait until the ports are free (an exiting process vanishes from /proc slightly before
+  # its socket closes).
   for _ in $(seq 1 20); do
-    if ! pgrep -f "opencode serve --port 4096" >/dev/null && ! (echo >/dev/tcp/127.0.0.1/4096) 2>/dev/null; then
+    if ! (echo >/dev/tcp/127.0.0.1/4096) 2>/dev/null && ! (echo >/dev/tcp/127.0.0.1/4095) 2>/dev/null; then
       break
     fi
     sleep 0.5
