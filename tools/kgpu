@@ -637,9 +637,9 @@ def kaggle_api():
         die(
             "Kaggle 登录失败：没有可用的 KAGGLE_API_TOKEN。\n"
             "  1. 在 https://www.kaggle.com/settings/api 生成 token（KGAT_ 开头）\n"
-            "  2. 在 https://github.com/settings/codespaces 添加 secret KAGGLE_API_TOKEN（仓库选 langhua98/open-code）\n"
-            "  3. 重启 codespace；或在当前终端临时执行 export KAGGLE_API_TOKEN=<token>\n"
-            "Kaggle login failed: set KAGGLE_API_TOKEN (a Codespaces secret) to a token from kaggle.com/settings/api."
+            "  2. 在 Space 的 Settings → Secrets 里添加 KAGGLE_API_TOKEN（值为第 1 步的 token）\n"
+            "  3. 重启 Space；或在当前终端临时执行 export KAGGLE_API_TOKEN=<token>\n"
+            "Kaggle login failed: set KAGGLE_API_TOKEN (a HuggingFace Space secret) to a token from kaggle.com/settings/api."
         )
     return api
 

@@ -7,7 +7,7 @@ __pycache__/
 *.py[cod]
 .venv/
 
-# Credentials: these belong in Codespaces Secrets, never in git
+# Credentials: these belong in Space Secrets, never in git
 .env
 .env.*
 kaggle.json

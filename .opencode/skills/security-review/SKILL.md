@@ -8,7 +8,7 @@ description: 检查仓库的安全问题：泄露的密钥和 token、危险的�
 1. **泄露的密钥**：当前文件和 git 历史都要查。
    - `git grep -nIE 'KGAT_|ghp_|gho_|github_pat_|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|[0-9]{8,10}:[A-Za-z0-9_-]{35}|-----BEGIN [A-Z ]*PRIVATE KEY'`
    - `git log -p --all | grep -nIE '<同一个表达式>' | head`
-   - 找到后不要在回复里写出完整的值，只说文件和行号（或提交号）。告诉用户：马上去对应网站重新生成这个密钥，新的放进 Codespaces Secrets，用环境变量读取。只从代码里删掉是不够的，git 历史里还有。
+   - 找到后不要在回复里写出完整的值，只说文件和行号（或提交号）。告诉用户：马上去对应网站重新生成这个密钥，新的放进 Space 的 Secrets，用环境变量读取。只从代码里删掉是不够的，git 历史里还有。
 2. **危险写法**：
    - 用户输入拼进命令：`os.system`、`subprocess(..., shell=True)`。
    - `eval`、`exec`、`pickle.load` 处理不可信的数据。

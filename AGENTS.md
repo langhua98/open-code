@@ -1,6 +1,6 @@
 # AGENTS.md
 
-这是一个在 GitHub Codespaces 里用 OpenCode 开发的 AI 工程。Codespaces 没有 GPU：需要 GPU 的推理和测试由 `tools/kgpu` 发到 Kaggle（默认 T4 ×2）运行，结果再拉回 `runs/`。
+这是一个在 HuggingFace Spaces（Docker）里用 OpenCode 开发的 AI 工程。Space 没有 GPU：需要 GPU 的推理和测试由 `tools/kgpu` 发到 Kaggle（默认 T4 ×2）运行，结果再拉回 `runs/`。
 
 和用户交流使用简体中文。用户经常在手机上操作，回复要短，先说结论。
 
@@ -36,7 +36,7 @@
 
 - **浏览器**（Playwright MCP，工具名以 `playwright_browser_` 开头）：为了省 token，默认的 build 代理没有这些工具，要用 `task` 工具交给 `browser` 子代理去做（用户也可以直接切换到 `browser` 代理）。用于需要点击、填表、登录或靠 JavaScript 显示内容的网页。常用工具是 `browser_navigate` 打开网页，`browser_snapshot` 读取页面结构，`browser_click` 和 `browser_type` 操作页面，`browser_take_screenshot` 截图。只是读文章或文档时，用更省事的 `webfetch`。截图保存在 `.playwright-mcp/`。
 - **网页搜索**：`websearch` 工具。查完后用 `webfetch` 读原文，回复里附上来源链接。
-- **GitHub**：`gh` 命令，已用 Codespaces 的 `GITHUB_TOKEN` 登录，可以操作本仓库的 Issue、PR 和 Actions。推送代码、开 PR、合并之前，先问用户。
+- **GitHub**：`gh` 命令，已用 `GITHUB_TOKEN`（环境变量/Secret）登录，可以操作本仓库的 Issue、PR 和 Actions。推送代码、开 PR、合并之前，先问用户。
 - **Docker**：`docker` 命令，需要重建过容器才有（先运行 `docker info` 确认）。
 - **文档和图表**：已经装好 Python 库 pypdf、python-docx、openpyxl、python-pptx、pandas、matplotlib。生成的文件放到 `outputs/`。
 - **技能**（`.opencode/skills/`）：`code-review` 审查改动，`security-review` 安全检查，`web-research` 上网调研，`documents` 处理 PDF、Word、Excel、PPT 和图表。遇到对应的任务时，先用 `skill` 工具加载。
@@ -45,5 +45,5 @@
 ## 规则
 
 - GPU 配额有限（每周 30 小时，用 `tools/kgpu quota` 查看）。每次运行要尽量短：用小 batch、少步数，只跑需要验证的部分。同一时间只跑一个任务。
-- 绝不打印、写入或提交任何密钥。`KAGGLE_API_TOKEN` 只来自环境变量，也就是 Codespaces Secrets。
+- 绝不打印、写入或提交任何密钥。`KAGGLE_API_TOKEN` 只来自环境变量，也就是 HuggingFace Space 的 Secrets。
 - 不要把 `runs/` 和 `outputs/` 提交到 git。

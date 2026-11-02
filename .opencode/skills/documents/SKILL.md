@@ -19,5 +19,5 @@ description: 读取或生成 PDF、Word、Excel、PPT 文件，以及画图表�
 
 1. 写一个小 Python 脚本完成任务并运行。生成后重新读一遍文件，确认内容和格式是对的。
 2. 中文：matplotlib 默认字体显示不了中文，会变成方块。图里有中文时，先设置 `plt.rcParams["font.family"] = "WenQuanYi Zen Hei"`（这个中文字体已经装好）。
-3. 生成的文件放到 `outputs/`（不提交到 git），告诉用户完整路径。用户可以在 Codespace 左侧的文件列表里，长按或右键文件选择「下载」。
+3. 生成的文件放到 `outputs/`（不提交到 git），告诉用户完整路径。用户可以在 OpenCode 左侧的文件列表里，长按或右键文件选择「下载」。
 4. 扫描版 PDF 里是图片，`extract_text` 读不出字。这种情况要先告诉用户，需要另外装 OCR 工具。

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>open-code</title>
-<meta name="description" content="手机上打开 Codespace 和 OpenCode 的入口">
+<meta name="description" content="手机上打开 HuggingFace Space 和 OpenCode 的入口">
 <meta name="theme-color" content="#0b0d10">
 <meta name="apple-mobile-web-app-title" content="open-code">
 <link rel="apple-touch-icon" href="icon.png">
@@ -88,24 +88,15 @@
     <img src="icon.png" alt="">
     <div>
       <h1>open-code</h1>
-      <p>手机 · Codespaces · OpenCode · Kaggle GPU</p>
+      <p>手机 · HuggingFace · OpenCode · Kaggle GPU</p>
     </div>
   </header>
 
   <section class="card step">
     <div class="num">1</div>
     <div style="flex:1">
-      <h2>唤醒 Codespace</h2>
-      <p>Codespace 停了也没关系，点下面会自动启动，大约等 1 分钟。</p>
-      <a class="btn secondary" id="open-codespace" href="#">打开 Codespace</a>
-    </div>
-  </section>
-
-  <section class="card step">
-    <div class="num">2</div>
-    <div style="flex:1">
       <h2>打开 OpenCode</h2>
-      <p>Codespace 连上以后再点这里。</p>
+      <p>Space 休眠了也没关系，点下面会自动唤醒，大约等几十秒。</p>
       <a class="btn" id="open-opencode" href="#">打开 OpenCode</a>
     </div>
   </section>
@@ -122,22 +113,21 @@
 
   <section class="card">
     <h2>OpenCode 页面空白？</h2>
-    <p>在 Codespace 的终端里输入下面这个命令，回车，然后刷新 OpenCode 页面。全屏的 OpenCode 没有刷新按钮：从后台划掉它，再点图标打开。</p>
-    <div class="copy"><code>web</code><button data-copy="web">复制</button></div>
-    <p style="margin-top:12px">新建会话时，项目选这个文件夹：</p>
-    <div class="copy"><code>/workspaces/open-code</code><button data-copy="/workspaces/open-code">复制</button></div>
+    <p>可能是 Space 正在休眠或重建，稍等刷新即可；一直打不开就在 Space 页面点 <b>Settings → Factory rebuild</b> 重建。全屏的 OpenCode 没有刷新按钮：从后台划掉它，再点图标打开。</p>
+    <p style="margin-top:12px">新建会话时，项目选这个文件夹（以你 Dockerfile 里的 WORKDIR 为准）：</p>
+    <div class="copy"><code>/app</code><button data-copy="/app">复制</button></div>
   </section>
 
   <section class="card links">
-    <a id="link-codespaces" href="https://github.com/codespaces">我的 Codespaces <span>停止 / 删除 ›</span></a>
+    <a id="link-space" href="#">我的 Space <span>设置 / 重建 ›</span></a>
     <a href="https://github.com/langhua98/open-code">代码仓库 <span>GitHub ›</span></a>
     <a href="https://www.kaggle.com/code/xiaojuai/open-code-gpu">GPU 运行记录 <span>Kaggle ›</span></a>
   </section>
 
   <section class="card">
     <details>
-      <summary>设置：换了新的 Codespace？</summary>
-      <label for="name">Codespace 名字（地址里 .github.dev 前面那一串）</label>
+      <summary>设置：换了新的 Space？</summary>
+      <label for="name">Space 名字（地址里 .hf.space 前面那一串，形如 用户名-空间名）</label>
       <input id="name" autocomplete="off" autocapitalize="off" spellcheck="false">
       <div class="row">
         <button id="save">保存</button>
@@ -146,13 +136,13 @@
     </details>
   </section>
 
-  <p class="note">这个入口页也可以添加到主屏幕，用来唤醒 Codespace。</p>
+  <p class="note">这个入口页也可以添加到主屏幕，用来打开 OpenCode。</p>
 </main>
 <div class="toast" id="toast"></div>
 
 <script>
-  const DEFAULT_NAME = "automatic-space-waffle-97pwpp66wq6cp74v";
-  const KEY = "open-code.codespace";
+  const DEFAULT_NAME = "langhua98-open-code";
+  const KEY = "open-code.space";
 
   function read() {
     try { return localStorage.getItem(KEY) || DEFAULT_NAME; } catch { return DEFAULT_NAME; }
@@ -164,14 +154,14 @@
 
   function apply() {
     const name = read();
-    document.getElementById("open-codespace").href = `https://${name}.github.dev/`;
-    document.getElementById("open-opencode").href = `https://${name}-4096.app.github.dev/`;
+    document.getElementById("open-opencode").href = `https://${name}.hf.space/`;
+    document.getElementById("link-space").href = `https://huggingface.co/spaces/${name}`;
     document.getElementById("name").value = name;
   }
 
-  // Accept either the bare name or a pasted address such as https://NAME.github.dev/ or https://NAME-4096.app.github.dev/
+  // Accept either the bare name or a pasted address such as https://USER-SPACE.hf.space/
   function clean(value) {
-    return value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/(-4096)?\.app\.github\.dev$|\.github\.dev$/, "");
+    return value.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/\.hf\.space$/, "");
   }
 
   function toast(text) {
