@@ -22,6 +22,17 @@ class OpenCodeConfigTest(unittest.TestCase):
         self.assertEqual(browser["type"], "local")
         self.assertIn("--headless", browser["command"])
 
+    def test_nvidia_models_are_listed_and_shown(self):
+        config = json.loads((REPO / "opencode.json").read_text(encoding="utf-8"))
+        nvidia = config["provider"]["nvidia"]
+        self.assertEqual(nvidia["options"]["baseURL"], "https://integrate.api.nvidia.com/v1")
+        self.assertEqual(nvidia["options"]["apiKey"], "{env:NVIDIA_API_KEY}")
+        # Every whitelisted model has a name and limits, so it shows up even without models.dev
+        self.assertEqual(sorted(nvidia["whitelist"]), sorted(nvidia["models"]))
+        for model in nvidia["models"].values():
+            self.assertTrue(model["name"])
+            self.assertGreater(model["limit"]["context"], model["limit"]["output"])
+
     def test_skills_follow_opencode_naming_rules(self):
         skills = sorted(p for p in SKILLS.iterdir() if p.is_dir())
         self.assertTrue(skills)
