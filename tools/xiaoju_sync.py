@@ -29,8 +29,8 @@ from urllib.parse import quote
 
 import requests
 
-XIAOJU_API = "https://langhua1998-xiaoju-cloud.hf.space/api/agent/v1"
-XIAOJU_WEB = "https://langhua1998-xiaoju-cloud.hf.space"
+XIAOJU_API = "https://node.tail823dbd.ts.net/api/agent/v1"
+XIAOJU_WEB = "https://node.tail823dbd.ts.net"
 DEFAULT_REPO = "langhua98/meta-work"
 TIMEOUT = 60
 
